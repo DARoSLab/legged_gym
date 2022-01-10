@@ -29,27 +29,43 @@
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
-
+import math
 class PatCfg( LeggedRobotCfg ):
     class gait():
-        swing_time = 0.15
+        swing_time = 0.33
+    class foot_placement():
         swing_height = 0.05
         hight_des = 0.42
         thigh_offset = 0.04
+        kappa=-0.06
+        t_prime=0.19
+        alpha = 0.5 #lift swing ratio
+        omega = math.sqrt(9.81/hight_des)
+        fp_type = 'Donghyun'
     class init_state( LeggedRobotCfg.init_state ):
         pos = [0.0, 0.0, 0.42] # x,y,z [m]
+        # default_joint_angles = { # = target angles [rad] when action = 0.0
+        #     'L_hip_joint': 0.0,   # [rad]
+        #     'R_hip_joint': 0.0,   # [rad]
+        #
+        #     'L_thigh_joint': -0.5,    # [rad]
+        #     'R_thigh_joint': -0.5,     # [rad]
+        #
+        #     'L_calf_joint': 1.2,     # [rad]
+        #     'R_calf_joint': 1.2,    # [rad]
+        # }
         default_joint_angles = { # = target angles [rad] when action = 0.0
-            'L_hip_joint': 0.0,   # [rad]
-            'R_hip_joint': 0.0,   # [rad]
+            'L_hip_joint': -0.16,   # [rad]
+            'R_hip_joint': 0.3,   # [rad]
 
-            'L_thigh_joint': -0.5,    # [rad]
-            'R_thigh_joint': -0.5,     # [rad]
+            'L_thigh_joint': 0.75,    # [rad]
+            'R_thigh_joint': 0.75,     # [rad]
 
-            'L_calf_joint': 1.2,     # [rad]
-            'R_calf_joint': 1.2,    # [rad]
+            'L_calf_joint': -1.2,     # [rad]
+            'R_calf_joint': -1.2,    # [rad]
         }
     class env( LeggedRobotCfg.env ):
-        num_observations = 36
+        num_observations = 33
         num_actions = 6
     class terrain(LeggedRobotCfg.terrain ):
         mesh_type = 'plane'
@@ -57,6 +73,8 @@ class PatCfg( LeggedRobotCfg ):
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'J'
+        kpCartesian = 1500
+        kdCartesian = 2.0
         stiffness = {'joint': 20.}  # [N*m/rad]
         damping = {'joint': 0.5}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
@@ -78,7 +96,7 @@ class PatCfg( LeggedRobotCfg ):
         flip_visual_attachments = True
         # collapse_fixed_joints = False
     class rewards( LeggedRobotCfg.rewards ):
-        soft_dof_pos_limit = 0.9
+        # soft_dof_pos_limit = 0.9
         base_height_target = 0.42
         class scales( LeggedRobotCfg.rewards.scales ):
             torques = -0.0002
@@ -86,7 +104,7 @@ class PatCfg( LeggedRobotCfg ):
             # no_fly = 20.
             base_height = -20.0
             # feet_air_time = 20.
-            stand_still = -0.5
+            # stand_still = -0.5
             orientation = -10.0
 
 class PatCfgPPO( LeggedRobotCfgPPO ):

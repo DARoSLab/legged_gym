@@ -31,6 +31,7 @@
 from time import time
 import numpy as np
 import os
+import math
 
 from isaacgym.torch_utils import *
 from isaacgym import gymtorch, gymapi, gymutil
@@ -47,7 +48,7 @@ class Pat(LeggedRobot):
 
         self._body_orientation_des = to_torch(np.zeros((self.num_envs, 4), dtype=np.float32), device=self.device)
         self._body_orientation_des[:, -1] = 1.0
-        self._body_omega_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
+        self._body_omegades = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
         self._body_omegadot_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
 
         self._body_position_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
@@ -81,17 +82,17 @@ class Pat(LeggedRobot):
         self._tau_swing = to_torch(np.zeros((self.num_envs, 6, 1), dtype=np.float32), device=self.device)
         self._tau_stance = to_torch(np.zeros((self.num_envs, 6, 1), dtype=np.float32), device=self.device)
         self._swing_time = cfg.gait.swing_time
-        self._swing_height = cfg.gait.swing_height
+        self._swing_height = cfg.foot_placement.swing_height
         self._gait_period = 3*self._swing_time #double stance and two single stances
         self._hight_des = to_torch(np.zeros((self.num_envs, 1), dtype=np.float32), device=self.device)
-        self._hight_des[:] = cfg.gait.hight_des
+        self._hight_des[:] = cfg.foot_placement.hight_des
 
         # Prepare jacobian tensor
         # For pat, tensor shape is (self.num_envs, 10, 6, 9)
         self._jacobian = self.gym.acquire_jacobian_tensor(self.sim, "anymal")
         self.jacobian = gymtorch.wrap_tensor(self._jacobian)
         self._Jc = to_torch(np.zeros((self.num_envs, 6, 12), dtype=np.float32), device=self.device)
-        print("jacobian: ", self._jacobian.shape)
+
         # Contact Jacobian entries
         LF_index = 5 #gym.get_asset_rigid_body_dict(pat_asset)["L_foot"]
         RF_index = 9 #gym.get_asset_rigid_body_dict(pat_asset)["R_foot"]
@@ -101,7 +102,12 @@ class Pat(LeggedRobot):
 
         self._rb_states = self.gym.acquire_rigid_body_state_tensor(self.sim)
         self.rb_states = gymtorch.wrap_tensor(self._rb_states)
-        print("_j_lf: ", self._j_lf.shape, type(self._j_lf))
+
+        self._rb_positions = self.rb_states[:, 0:3].view(self.num_envs, self.num_bodies, 3)
+        self._rb_vels = self.rb_states[:, 7:10].view(self.num_envs, self.num_bodies, 3)
+
+        print("Foot Placment Type: {}".format(cfg.foot_placement.fp_type))
+
     def _create_envs(self):
         """ Creates environments:
              1. loads the robot URDF/MJCF asset,
@@ -182,7 +188,7 @@ class Pat(LeggedRobot):
             self.envs.append(env_handle)
             self.actor_handles.append(anymal_handle)
 
-            trunk_idx = self.gym.find_actor_rigid_body_index(env_handle, anymal_handle, "trunk", gymapi.DOMAIN_SIM)
+            trunk_idx = self.gym.find_actor_rigid_body_index(env_handle, anymal_handle, "base", gymapi.DOMAIN_SIM)
             self.trunk_idxs.append(trunk_idx)
             lf_idx = self.gym.find_actor_rigid_body_index(env_handle, anymal_handle, "L_foot", gymapi.DOMAIN_SIM)
             self.lf_idxs.append(lf_idx)
@@ -206,23 +212,24 @@ class Pat(LeggedRobot):
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
 
-
+        self._rb_properties = self.gym.get_actor_rigid_body_properties(self.envs[0], 0)
+        self._rb_masses = to_torch(np.array([getattr(self._rb_properties[i], 'mass') for i in range(self.num_bodies)], dtype=np.float32), device=self.device)
     def compute_observations(self):
         """ Computes observations
         """
         self._body_position = self.rb_states[self.trunk_idxs, :3]
         self._body_orientation = self.rb_states[self.trunk_idxs, 3:7]
-        self.obs_buf = torch.cat((  self._body_position[:, 2].view(-1, 1), #body height
-                                    self._body_orientation,
-                                    self.base_lin_vel * self.obs_scales.lin_vel,
-                                    self.base_ang_vel  * self.obs_scales.ang_vel,
-                                    self.projected_gravity,
-                                    self.commands[:, :3] * self.commands_scale,
-                                    self.dof_pos,
-                                    self.dof_vel,
-                                    self.actions,
-                                    self._phase,
-                                    ),dim=-1)
+        self.obs_buf = torch.cat((  self._body_position[:, 2].view(-1, 1), #body height 1
+                                    self._body_orientation, #orientation quat 4
+                                    self.base_lin_vel * self.obs_scales.lin_vel, # 3
+                                    self.base_ang_vel  * self.obs_scales.ang_vel, # 3
+                                    self.projected_gravity, # 3
+                                    # self.commands[:, :3] * self.commands_scale, #3
+                                    self.dof_pos,# 6
+                                    self.dof_vel,# 6
+                                    self.actions,# 6
+                                    self._phase, # 1
+                                    ),dim=-1) # 33
         # add perceptive inputs if not blind
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements
@@ -244,8 +251,8 @@ class Pat(LeggedRobot):
         # _sstance_l_idx = torch.logical_and(torch.logical_not(_dstance_idx), (self._phase<(2./3)).squeeze()) #single stance left foot stance
         # _sstance_r_idx =  (self._phase>(2./3)).squeeze() #right foot stance
 
-        _dstance_idx = (self._phase<0).squeeze() # double stance
-        _sstance_l_idx = (self._phase<0.5).squeeze() #single stance left foot stance
+        _dstance_idx = (self._phase<0).squeeze() # no double stance
+        _sstance_l_idx = (self._phase<=0.5).squeeze() #single stance left foot stance
         _sstance_r_idx =  (self._phase>0.5).squeeze() #right foot stance
 
         self._swing_states[_dstance_idx, 0] = 0.0
@@ -271,17 +278,95 @@ class Pat(LeggedRobot):
         # self._swing_phases[_sstance_r_idx, 1] = 3*(self._phase[_sstance_r_idx]-2.0/3).squeeze()
         self._swing_phases[_sstance_r_idx, 1] = 2*(self._phase[_sstance_r_idx]-0.5).squeeze()
 
+    def _donghyun_fp(self):
+        t_prime = torch.zeros((2, 1), device=self.device)
+        t_prime[:] = self.cfg.foot_placement.t_prime
+        kappa = torch.zeros((2, 1), device=self.device)
+        kappa[:] = self.cfg.foot_placement.kappa
+        omega = self.cfg.foot_placement.omega
 
-    def _update_foot_placement(self):
+        ll_swing_idx = self._swing_states[:, 0]>0.0
+        rl_swing_idx = self._swing_states[:, 1]>0.0
+        stance_foot_loc = torch.zeros_like(self._lf_position)
+        self._lf_pf_des = torch.zeros_like(self._lf_position)
+        self._rf_pf_des = torch.zeros_like(self._lf_position)
+        self._lf_p_mid_des = torch.zeros_like(self._lf_position)
+        self._rf_p_mid_des = torch.zeros_like(self._lf_position)
+        stance_foot_loc[ll_swing_idx] = self._rf_position[ll_swing_idx] #right foot stance
+        stance_foot_loc[rl_swing_idx] = self._lf_position[rl_swing_idx] #left foot stance
 
-        self.gym.refresh_rigid_body_state_tensor(self.sim)
 
-        # _omegaBody = self.rb_states[self.trunk_idxs, 10:13]
-        # _lf_position = self.rb_states[self.lf_idxs, :3]
-        # _lf_vel = self.rb_states[self.lf_idxs, 7:10]
-        # _rf_position = self.rb_states[self.rf_idxs, :3]
-        # _rf_vel = self.rb_states[self.rf_idxs, 7:10]
+        swing_time_remaining = torch.zeros_like(self._phase)
+        swing_time_remaining[rl_swing_idx] = 2*self._swing_time*(1-self._phase[rl_swing_idx])# Right leg stance first
+        swing_time_remaining[ll_swing_idx] = self._swing_time*(1-2*self._phase[ll_swing_idx])
 
+        A = 0.5*((self._com_position[:, :2] - stance_foot_loc[:, :2]) + self._com_vel[:, :2]/omega) #Nx1
+        B = 0.5*((self._com_position[:, :2] - stance_foot_loc[:, :2]) - self._com_vel[:, :2]/omega)
+
+
+        switching_state_pos = (torch.bmm(A.view(-1, 2, 1), torch.exp(omega * swing_time_remaining).view(-1, 1, 1))
+                            + torch.bmm(B.view(-1, 2, 1), torch.exp(-omega * swing_time_remaining).view(-1, 1, 1))
+                            + stance_foot_loc[:, :2].view(-1, 2, 1))
+
+        switching_state_vel = (omega*torch.bmm(A.view(-1, 2, 1), torch.exp(omega * swing_time_remaining).view(-1, 1, 1))
+                                    - torch.bmm(B.view(-1, 2, 1), torch.exp(-omega * swing_time_remaining).view(-1, 1, 1)))
+
+        exp_weight = 1/(omega*torch.tanh(omega * t_prime)) #coth
+
+        target_loc = torch.zeros_like(self._lf_position)
+        target_loc[:, :2] = switching_state_pos.view(-1, 2)@(1-kappa) + switching_state_vel.view(-1, 2) @ exp_weight
+        target_loc[:, 2] = 0.
+
+        b_positive_sidestep = ll_swing_idx
+        target_loc = self._step_length_check(target_loc, b_positive_sidestep, stance_foot_loc)
+        self._lf_pf_des[ll_swing_idx] = target_loc[ll_swing_idx]
+        self._rf_pf_des[rl_swing_idx] = target_loc[rl_swing_idx]
+
+        self._lf_p_mid_des[rl_swing_idx, :] = stance_foot_loc[rl_swing_idx, :] #left stance
+        self._lf_p_mid_des[rl_swing_idx, 2] = self.cfg.foot_placement.swing_height #swing height
+        self._rf_p_mid_des[ll_swing_idx, :] = stance_foot_loc[ll_swing_idx] #right stance
+        self._rf_p_mid_des[ll_swing_idx, 2] = self.cfg.foot_placement.swing_height #swing height
+
+    def _step_length_check(self, target_loc, b_positive_sidestep, stance_foot):
+        # X limit check
+
+        x_step_length_limit_ = torch.zeros((2,1), device=self.device)
+        x_step_length_limit_[0] = -0.1
+        x_step_length_limit_[1] = 0.1
+
+        y_step_length_limit_ = torch.zeros((2,1), device=self.device)
+        y_step_length_limit_[0] = 0.03 #min
+        y_step_length_limit_[1] = 0.12 #max
+
+        #X LIMIT CHECK
+        x_step_length = target_loc[:, 0] - stance_foot[:, 0]
+        x_min_idx = x_step_length < x_step_length_limit_[0]
+        x_max_idx = x_step_length > x_step_length_limit_[1]
+
+        target_loc[x_min_idx, 0] = stance_foot[x_min_idx, 0] + x_step_length_limit_[0]
+        target_loc[x_max_idx, 0] = stance_foot[x_max_idx, 0] + x_step_length_limit_[1]
+
+        #Y limit check
+        y_step_length =  target_loc[:, 1] - stance_foot[:, 1]
+
+        y_min_idx = y_step_length < y_step_length_limit_[0]
+        y_max_idx = y_step_length > y_step_length_limit_[1]
+
+        mv_left_min_idx = torch.logical_and(b_positive_sidestep, y_min_idx)
+        mv_left_max_idx = torch.logical_and(b_positive_sidestep, y_max_idx)
+
+        target_loc[mv_left_min_idx, 1] = stance_foot[mv_left_min_idx, 1] + y_step_length_limit_[0]
+        target_loc[mv_left_min_idx, 1] = stance_foot[mv_left_min_idx, 1] + y_step_length_limit_[1]
+
+        mv_right_min_idx = torch.logical_and(torch.logical_not(b_positive_sidestep), y_min_idx)
+        mv_right_max_idx = torch.logical_and(torch.logical_not(b_positive_sidestep), y_max_idx)
+
+        target_loc[mv_right_min_idx, 1] = stance_foot[mv_right_min_idx, 1] - y_step_length_limit_[0]
+        target_loc[mv_right_min_idx, 1] = stance_foot[mv_right_min_idx, 1] - y_step_length_limit_[1]
+
+        return target_loc
+
+    def _capture_point_fp(self):
         _vBody = self.rb_states[self.trunk_idxs, 7:10]
         _lthigh_position = self.rb_states[self.lthigh_idxs, :3]
         _rthigh_position = self.rb_states[self.rthigh_idxs, :3]
@@ -302,43 +387,64 @@ class Pat(LeggedRobot):
         self._lf_pf_des[ltrans_idx]  += torch.sqrt(self._hight_des/9.8)[ltrans_idx]*(self._body_vel_des[ltrans_idx]-_vBody[ltrans_idx])
         # zero foot height
         self._lf_pf_des[:, 2] = 0
-        self._lf_pf_des[:, 1] += self.cfg.gait.thigh_offset
+        self._lf_pf_des[:, 1] += self.cfg.foot_placement.thigh_offset
         #  Raibert heuristi
         self._rf_pf_des[rtrans_idx]  = _rthigh_position[rtrans_idx] + _vBody[rtrans_idx]*self._swing_time*0.5
         #  capture-point
         self._rf_pf_des[rtrans_idx]  += torch.sqrt(self._hight_des/9.8)[rtrans_idx]*(self._body_vel_des[rtrans_idx]-_vBody[rtrans_idx])
         self._rf_pf_des[:, 2] = 0
-        self._rf_pf_des[:, 1] -= self.cfg.gait.thigh_offset
+        self._rf_pf_des[:, 1] -= self.cfg.foot_placement.thigh_offset
+    def _update_foot_placement(self):
+        self.gym.refresh_rigid_body_state_tensor(self.sim)
+        if self.cfg.foot_placement.fp_type=='CP':
+            self._capture_point_fp()
+        else:
+            self._donghyun_fp()
+    def _update_com_state(self):
+        self._com_position = torch.sum(self._rb_positions*self._rb_masses.view(1, self.num_bodies, 1), dim=1)/torch.sum(self._rb_masses)
+        self._com_vel = torch.sum(self._rb_vels*self._rb_masses.view(1, self.num_bodies, 1), dim=1)/torch.sum(self._rb_masses)
+    def _compute_swing_trajectory(self, fp_algorithm='cp'):
 
-    def _compute_swing_trajectory(self):
         self._lf_position = self.rb_states[self.lf_idxs, :3]
         self._lf_vel = self.rb_states[self.lf_idxs, 7:10]
         self._rf_position = self.rb_states[self.rf_idxs, :3]
         self._rf_vel = self.rb_states[self.rf_idxs, 7:10]
-
         ll_swing_idx = self._swing_states[:, 0]>0.0 #left leg swing
-        self._lf_position_des[ll_swing_idx], self._lf_vel_des[ll_swing_idx], self._lf_acc_des[ll_swing_idx] = computeLiftSwingTrajectory(self._lf_position[ll_swing_idx],
-        self._lf_pf_des[ll_swing_idx],
-        self._swing_phases[ll_swing_idx, 0],
-        self._swing_height,
-        self._swing_time)
-
         rl_swing_idx = self._swing_states[:, 1]>0.0 #right leg swing
-        self._rf_position_des[rl_swing_idx], self._rf_vel_des[rl_swing_idx], self._rf_acc_des[rl_swing_idx] = computeLiftSwingTrajectory(self._rf_position[rl_swing_idx],
-        self._rf_pf_des[rl_swing_idx],
-        self._swing_phases[rl_swing_idx, 1],
-        self._swing_height,
-        self._swing_time)
+        if(self.cfg.foot_placement.fp_type=='CP'):
+            self._lf_position_des[ll_swing_idx], self._lf_vel_des[ll_swing_idx], self._lf_acc_des[ll_swing_idx] = computeHeightSwingTrajectory(self._lf_position[ll_swing_idx],
+            self._lf_pf_des[ll_swing_idx],
+            self._swing_phases[ll_swing_idx, 0],
+            self._swing_height,
+            self._swing_time)
+
+            self._rf_position_des[rl_swing_idx], self._rf_vel_des[rl_swing_idx], self._rf_acc_des[rl_swing_idx] = computeHeightSwingTrajectory(self._rf_position[rl_swing_idx],
+            self._rf_pf_des[rl_swing_idx],
+            self._swing_phases[rl_swing_idx, 1],
+            self._swing_height,
+            self._swing_time)
+        else:
+            self._lf_position_des[ll_swing_idx], self._lf_vel_des[ll_swing_idx], self._lf_acc_des[ll_swing_idx] = computeLiftSwingTrajectory(self._lf_position[ll_swing_idx],
+            self._lf_p_mid_des[ll_swing_idx],
+            self._lf_pf_des[ll_swing_idx],
+            self._swing_phases[ll_swing_idx, 0],
+            alpha = self.cfg.foot_placement.alpha,
+            swing_time=self.cfg.gait.swing_time)
+
+            self._rf_position_des[rl_swing_idx], self._rf_vel_des[rl_swing_idx], self._rf_acc_des[rl_swing_idx] = computeLiftSwingTrajectory(self._rf_position[rl_swing_idx],
+            self._rf_p_mid_des[rl_swing_idx],
+            self._rf_pf_des[rl_swing_idx],
+            self._swing_phases[rl_swing_idx, 1],
+            alpha = self.cfg.foot_placement.alpha,
+            swing_time=self.cfg.gait.swing_time)
+
 
     def _swing_impedence_control(self):
 
-        kpCartesian = 1500.0
-        kdCartesian = 2.0
-
-        lfootForce = kpCartesian * (self._lf_position_des - self._lf_position)
-        lfootForce += kdCartesian * (self._lf_vel_des - self._lf_vel)
-        rfootForce = kpCartesian * (self._rf_position_des - self._rf_position)
-        rfootForce += kdCartesian * (self._rf_vel_des - self._rf_vel_des)
+        lfootForce = self.cfg.control.kpCartesian * (self._lf_position_des - self._lf_position)
+        lfootForce += self.cfg.control.kdCartesian * (self._lf_vel_des - self._lf_vel)
+        rfootForce = self.cfg.control.kpCartesian * (self._rf_position_des - self._rf_position)
+        rfootForce += self.cfg.control.kdCartesian * (self._rf_vel_des - self._rf_vel_des)
 
         ll_stance_idx = self._swing_states[:, 0]<=0.0 #left leg swing
         rl_stance_idx = self._swing_states[:, 1]<=0.0 #left leg swing
@@ -388,9 +494,10 @@ class Pat(LeggedRobot):
             torques = self.p_gains*(actions_scaled - self.dof_vel) - self.d_gains*(self.dof_vel - self.last_dof_vel)/self.sim_params.dt
         elif control_type=="T":
             torques = actions_scaled
-        elif control_type == "J":
+        elif control_type == "J": #jacobian transpose
             self._build_contact_jacobian()
             self._update_gait_info()
+            self._update_com_state()
             self._update_foot_placement()
             self._compute_swing_trajectory()
             self._swing_impedence_control()

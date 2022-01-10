@@ -235,9 +235,9 @@ def _stance_jt_control():
 def _capture_point_fp():
     pass
 def _compute_com():
-    global _rb_positions, _rb_vels, _rb_masses, _com_position, _com_vel
-    _com_position = torch.sum(_rb_positions*_rb_masses.view(1, 10, 1), dim=1)/torch.sum(_rb_masses)
-    _com_vel = torch.sum(_rb_vels*_rb_masses.view(1, 10, 1), dim=1)/torch.sum(_rb_masses)
+    global _rb_positions, _rb_vels, _rb_masses, _com_position, _com_vel, _num_bodies
+    _com_position = torch.sum(_rb_positions*_rb_masses.view(1, _num_bodies, 1), dim=1)/torch.sum(_rb_masses)
+    _com_vel = torch.sum(_rb_vels*_rb_masses.view(1, _num_bodies, 1), dim=1)/torch.sum(_rb_masses)
 
 
 def _donghyun_fp(continous_update=True):
@@ -463,7 +463,7 @@ def _update_ops_command():
     _rf_op_cmd = _Kp_swing*_rf_pos_error + \
                  _Kd_swing*(_rf_vel_des-_rf_vel)+ \
                  _rf_acc_des
-def _ContactBuilding():
+def _build_contact_jacobian():
     global _Jc, _JcDotQdot, _j_lf, _j_rf
     # if _j_lf.shape[2]==12:
     _Jc[:, :3, :] = _j_lf[:, :3, :] #position jacobian only
@@ -471,7 +471,7 @@ def _ContactBuilding():
     # _JcDotQdot = np.zeros(()) set to zero for now
 def _compute_wbc():
     global num_envs, device, _Jc, _JcDotQdot, _A, _eye, _qddot_cmd, _qdot_cmd_act, _q_cmd_act
-    _ContactBuilding()
+    _build_contact_jacobian()
     Ainv_ = torch.inverse(_A)
     # #Contact Constraint
     JcBar = _WeightedInverse(_Jc, Ainv_)
@@ -667,6 +667,7 @@ asset_options.armature = 0.01
 asset_options.fix_base_link = False
 asset_options.disable_gravity = False
 asset_options.flip_visual_attachments = True
+asset_options.collapse_fixed_joints = True
 pat_asset = gym.load_asset(sim, asset_root, pat_asset_file, asset_options)
 
 
@@ -676,7 +677,11 @@ pat_lower_limits = pat_dof_props["lower"]
 pat_upper_limits = pat_dof_props["upper"]
 pat_ranges = pat_upper_limits - pat_lower_limits
 
-num_bodies = gym.get_asset_rigid_body_count(pat_asset)
+_num_bodies = gym.get_asset_rigid_body_count(pat_asset)
+print("num bodies: {}".format(_num_bodies))
+body_names = gym.get_asset_rigid_body_names(pat_asset)
+print("body names:", body_names)
+
 # use torque drive for all dofs
 pat_dof_props["driveMode"].fill(gymapi.DOF_MODE_EFFORT)
 pat_dof_props["stiffness"].fill(0.0)
@@ -702,7 +707,8 @@ print("Creating %d environments" % num_envs)
 
 pat_pose = gymapi.Transform()
 pat_pose.p = gymapi.Vec3(0, 0, 0.44)
-
+# print(dir(pat_pose))
+# quit()
 envs = []
 trunk_idxs = []
 lthigh_idxs = []
@@ -717,6 +723,15 @@ plane_params = gymapi.PlaneParams()
 plane_params.normal = gymapi.Vec3(0, 0, 1)
 gym.add_ground(sim, plane_params)
 
+
+
+
+
+
+# _init_root_state.pose = pat_pose
+# _init_root_state.vel = pat_vel
+
+# _init_root_state[:3]
 for i in range(num_envs):
     # create env
     env = gym.create_env(sim, env_lower, env_upper, num_per_row)
@@ -724,6 +739,7 @@ for i in range(num_envs):
 
     # add pat
     pat_handle = gym.create_actor(env, pat_asset, pat_pose, "pat", i, 2)
+
 
     # set dof properties
     gym.set_actor_dof_properties(env, pat_handle, pat_dof_props)
@@ -734,7 +750,7 @@ for i in range(num_envs):
     # set initial position targets
     gym.set_actor_dof_position_targets(env, pat_handle, default_dof_pos)
 
-    trunk_idx = gym.find_actor_rigid_body_index(env, pat_handle, "trunk", gymapi.DOMAIN_SIM)
+    trunk_idx = gym.find_actor_rigid_body_index(env, pat_handle, "base", gymapi.DOMAIN_SIM)
     trunk_idxs.append(trunk_idx)
     lf_idx = gym.find_actor_rigid_body_index(env, pat_handle, "L_foot", gymapi.DOMAIN_SIM)
     lf_idxs.append(lf_idx)
@@ -744,6 +760,12 @@ for i in range(num_envs):
     lthigh_idxs.append(lthigh_idx)
     rthigh_idx = gym.find_actor_rigid_body_index(env, pat_handle, "R_thigh", gymapi.DOMAIN_SIM)
     rthigh_idxs.append(rthigh_idx)
+
+_init_root_state_tensor = to_torch(np.zeros((num_envs, 13)), device=device)
+_init_root_state_tensor[:, 2] = 0.44
+_init_root_state_tensor[:, 6] = 1.0
+_init_root_state_tensor[:, 8] = -0.09
+gym.set_actor_root_state_tensor(sim, gymtorch.unwrap_tensor(_init_root_state_tensor))
 
 # point camera at middle env
 cam_pos = gymapi.Vec3(4, 3, 2)
@@ -794,10 +816,10 @@ rb_states = gymtorch.wrap_tensor(_rb_states)
 
 _rb_properties = gym.get_actor_rigid_body_properties(envs[0], 0)
 
-_rb_masses = to_torch(np.array([getattr(_rb_properties[i], 'mass') for i in range(10)], dtype=np.float32), device=device)
+_rb_masses = to_torch(np.array([getattr(_rb_properties[i], 'mass') for i in range(_num_bodies)], dtype=np.float32), device=device)
 
-_rb_positions = rb_states[:, 0:3].view(num_envs, num_bodies, 3)
-_rb_vels = rb_states[:, 7:10].view(num_envs, num_bodies, 3)
+_rb_positions = rb_states[:, 0:3].view(num_envs, _num_bodies, 3)
+_rb_vels = rb_states[:, 7:10].view(num_envs, _num_bodies, 3)
 # DOF state tensor
 _dof_states = gym.acquire_dof_state_tensor(sim)
 dof_states = gymtorch.wrap_tensor(_dof_states)
@@ -933,7 +955,7 @@ while not gym.query_viewer_has_closed(viewer):
     _donghyun_fp()
     # _update_foot_placement()
     _compute_swing_trajectory()
-    _ContactBuilding()
+    _build_contact_jacobian()
     _swing_impedence_control()
     _stance_jt_control()
     # lf_hist.append(_lf_position[0, 2].numpy())
@@ -959,20 +981,22 @@ while not gym.query_viewer_has_closed(viewer):
     # _tau  = (_tau_swing + _tau_stance)
     # if sim_count < 1000:
     #     # set forces and force positions for ant root bodies (first body in each env)
-    #     forces = torch.zeros((num_envs, num_bodies, 3), device=device, dtype=torch.float)
+    #     forces = torch.zeros((num_envs, _num_bodies, 3), device=device, dtype=torch.float)
     #     force_positions = _rb_positions.clone()
     #     if sim_count%5 == 0:
     #         forces[:, 0, 2] = 200
     #     force_positions[:, 0, 2] += 0.0
     #     gym.apply_rigid_body_force_at_pos_tensors(sim, gymtorch.unwrap_tensor(forces), gymtorch.unwrap_tensor(force_positions), gymapi.ENV_SPACE)
         # print("iter [{}] applying [{}] Nm of force".format(sim_count, forces[0, 0, 2]))
+
     gym.set_dof_actuation_force_tensor(sim, gymtorch.unwrap_tensor(_tau))
 
     # update viewer
     gym.step_graphics(sim)
+    gym.draw_env_rigid_contacts(viewer, envs[0], gymapi.Vec3(255, 0.0, 0.0), -0.01, False)
     gym.draw_viewer(viewer, sim, False)
     gym.sync_frame_time(sim)
-
+    gym.clear_lines(viewer)
 # cleanup
 gym.destroy_viewer(viewer)
 gym.destroy_sim(sim)

@@ -17,10 +17,10 @@ Joint Monkey
 import math
 import numpy as np
 from isaacgym import gymapi, gymutil
-from legged_gym.envs.a1.a1_config import A1RoughCfg, A1RoughCfgPPO
-from legged_gym.envs.a1.a1_flat_config import A1FlatCfg, A1FlatCfgPPO
-from legged_gym.envs.mini_cheetah.mini_cheetah_config import MiniCheetahRoughCfg, MiniCheetahRoughCfgPPO
-from legged_gym.envs.mini_cheetah.mini_cheetah_flat_config import MiniCheetahFlatCfg, MiniCheetahFlatCfgPPO
+# from legged_gym.envs.a1.a1_config import A1RoughCfg, A1RoughCfgPPO
+# from legged_gym.envs.a1.a1_flat_config import A1FlatCfg, A1FlatCfgPPO
+# from legged_gym.envs.mini_cheetah.mini_cheetah_config import MiniCheetahRoughCfg, MiniCheetahRoughCfgPPO
+# from legged_gym.envs.mini_cheetah.mini_cheetah_flat_config import MiniCheetahFlatCfg, MiniCheetahFlatCfgPPO
 from legged_gym.envs.pat.pat_config import PatCfg, PatCfgPPO
 
 def clamp(x, min_value, max_value):
@@ -36,8 +36,8 @@ class AssetDesc:
 
 
 asset_descriptors = [
-    AssetDesc("mini_cheetah/urdf/mini_cheetah_rs.urdf", False),
-    AssetDesc("a1/urdf/a1.urdf", True),
+    # AssetDesc("mini_cheetah/urdf/mini_cheetah_rs.urdf", False),
+    # AssetDesc("a1/urdf/a1.urdf", True),
     AssetDesc("pat/urdf/pat.urdf", True),
 ]
 
@@ -204,18 +204,18 @@ for i in range(num_envs):
 
     # add actor
     pose = gymapi.Transform()
-    pose.p = gymapi.Vec3(0.0, 1.32, 0.0)
+    pose.p = gymapi.Vec3(0.0, 0.42, 0.0)
     pose.r = gymapi.Quat(-0.707107, 0.0, 0.0, 0.707107)
 
     actor_handle = gym.create_actor(env, asset, pose, "actor", i, 1)
     actor_handles.append(actor_handle)
 
-    actor_handle2 = gym.create_actor(env, asset2, pose, "actor 2", i, 1)
-    actor_handles.append(actor_handle2)
+    # actor_handle2 = gym.create_actor(env, asset2, pose, "actor 2", i, 1)
+    # actor_handles.append(actor_handle2)
 
     # set default DOF positions
     gym.set_actor_dof_states(env, actor_handle, dof_states, gymapi.STATE_ALL)
-    gym.set_actor_dof_states(env, actor_handle2, dof_states2, gymapi.STATE_ALL)
+    # gym.set_actor_dof_states(env, actor_handle2, dof_states2, gymapi.STATE_ALL)
 
 # joint animation states
 ANIM_SEEK_LOWER = 1
@@ -227,39 +227,39 @@ ANIM_FINISHED = 4
 anim_state = ANIM_SEEK_LOWER
 current_dof = 0
 print("Animating DOF %d ('%s')" % (current_dof, dof_names[current_dof]))
-
-_mc_jt_angels = MiniCheetahRoughCfg.init_state.default_joint_angles
-
-_a1_jt_angels = A1RoughCfg.init_state.default_joint_angles
-
-_mc_dof = [
-            _mc_jt_angels['FL_hip_joint'],
-            _mc_jt_angels['FL_thigh_joint'],
-            _mc_jt_angels['FL_calf_joint'],
-            _mc_jt_angels['FR_hip_joint'],
-            _mc_jt_angels['FR_thigh_joint'],
-            _mc_jt_angels['FR_calf_joint'],
-            _mc_jt_angels['RL_hip_joint'],
-            _mc_jt_angels['RL_thigh_joint'],
-            _mc_jt_angels['RL_calf_joint'],
-            _mc_jt_angels['RR_hip_joint'],
-            _mc_jt_angels['RR_thigh_joint'],
-            _mc_jt_angels['RR_calf_joint']
-          ]
-_a1_dof = [
-            _a1_jt_angels['FL_hip_joint'],
-            _a1_jt_angels['FL_thigh_joint'],
-            _a1_jt_angels['FL_calf_joint'],
-            _a1_jt_angels['FR_hip_joint'],
-            _a1_jt_angels['FR_thigh_joint'],
-            _a1_jt_angels['FR_calf_joint'],
-            _a1_jt_angels['RL_hip_joint'],
-            _a1_jt_angels['RL_thigh_joint'],
-            _a1_jt_angels['RL_calf_joint'],
-            _a1_jt_angels['RR_hip_joint'],
-            _a1_jt_angels['RR_thigh_joint'],
-            _a1_jt_angels['RR_calf_joint']
-          ]
+#
+# _mc_jt_angels = MiniCheetahRoughCfg.init_state.default_joint_angles
+#
+# _a1_jt_angels = A1RoughCfg.init_state.default_joint_angles
+#
+# _mc_dof = [
+#             _mc_jt_angels['FL_hip_joint'],
+#             _mc_jt_angels['FL_thigh_joint'],
+#             _mc_jt_angels['FL_calf_joint'],
+#             _mc_jt_angels['FR_hip_joint'],
+#             _mc_jt_angels['FR_thigh_joint'],
+#             _mc_jt_angels['FR_calf_joint'],
+#             _mc_jt_angels['RL_hip_joint'],
+#             _mc_jt_angels['RL_thigh_joint'],
+#             _mc_jt_angels['RL_calf_joint'],
+#             _mc_jt_angels['RR_hip_joint'],
+#             _mc_jt_angels['RR_thigh_joint'],
+#             _mc_jt_angels['RR_calf_joint']
+#           ]
+# _a1_dof = [
+#             _a1_jt_angels['FL_hip_joint'],
+#             _a1_jt_angels['FL_thigh_joint'],
+#             _a1_jt_angels['FL_calf_joint'],
+#             _a1_jt_angels['FR_hip_joint'],
+#             _a1_jt_angels['FR_thigh_joint'],
+#             _a1_jt_angels['FR_calf_joint'],
+#             _a1_jt_angels['RL_hip_joint'],
+#             _a1_jt_angels['RL_thigh_joint'],
+#             _a1_jt_angels['RL_calf_joint'],
+#             _a1_jt_angels['RR_hip_joint'],
+#             _a1_jt_angels['RR_thigh_joint'],
+#             _a1_jt_angels['RR_calf_joint']
+#           ]
 print()
 while not gym.query_viewer_has_closed(viewer):
 
@@ -290,9 +290,9 @@ while not gym.query_viewer_has_closed(viewer):
     #     current_dof = (current_dof + 1) % num_dofs
     #     anim_state = ANIM_SEEK_LOWER
     #     print("Animating DOF %d ('%s')" % (current_dof, dof_names[current_dof]))
-    for i in range(12):
-        dof_positions[i] = _a1_dof[i]
-        dof_positions2[i] = _mc_dof[i]
+    # for i in range(12):
+    #     dof_positions[i] = _a1_dof[i]
+    #     dof_positions2[i] = _mc_dof[i]
     if args.show_axis:
         gym.clear_lines(viewer)
 
@@ -300,7 +300,7 @@ while not gym.query_viewer_has_closed(viewer):
     for i in range(num_envs):
 
         gym.set_actor_dof_states(envs[i], actor_handles[i], dof_states, gymapi.STATE_POS)
-        gym.set_actor_dof_states(envs[i], actor_handles[i+1], dof_states2, gymapi.STATE_POS)
+        # gym.set_actor_dof_states(envs[i], actor_handles[i+1], dof_states2, gymapi.STATE_POS)
 
 
         if args.show_axis:
