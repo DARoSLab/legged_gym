@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
@@ -34,10 +34,19 @@ from .base.legged_robot import LeggedRobot
 from .anymal_c.anymal import Anymal
 from .anymal_c.mixed_terrains.anymal_c_rough_config import AnymalCRoughCfg, AnymalCRoughCfgPPO
 from .anymal_c.flat.anymal_c_flat_config import AnymalCFlatCfg, AnymalCFlatCfgPPO
+from .anymal_c.test.anymal_test_config import AnymalCTestCfg, AnymalCTestCfgPPO
 from .anymal_b.anymal_b_config import AnymalBRoughCfg, AnymalBRoughCfgPPO
 from .cassie.cassie import Cassie
 from .cassie.cassie_config import CassieRoughCfg, CassieRoughCfgPPO
 from .a1.a1_config import A1RoughCfg, A1RoughCfgPPO
+from .a1.a1_flat_config import A1FlatCfg, A1FlatCfgPPO
+from .a1.a1 import A1
+#from .mini_cheetah.mini_cheetah_config import MiniCheetahRoughCfg, MiniCheetahRoughCfgPPO
+#from .mini_cheetah.mini_cheetah_flat_config import MiniCheetahFlatCfg, MiniCheetahFlatCfgPPO
+#from .mini_cheetah.mini_cheetah_actuator_model_config import MiniCheetahActuatorModelCfg, MiniCheetahActuatorModelCfgPPO
+#from .mini_cheetah.mini_cheetah import MiniCheetah
+from .pat.pat import Pat
+from .pat.pat_config import PatCfg, PatCfgPPO
 
 
 import os
@@ -46,6 +55,14 @@ from legged_gym.utils.task_registry import task_registry
 
 task_registry.register( "anymal_c_rough", Anymal, AnymalCRoughCfg(), AnymalCRoughCfgPPO() )
 task_registry.register( "anymal_c_flat", Anymal, AnymalCFlatCfg(), AnymalCFlatCfgPPO() )
+task_registry.register( "anymal_test", Anymal, AnymalCTestCfg(), AnymalCTestCfgPPO() )
 task_registry.register( "anymal_b", Anymal, AnymalBRoughCfg(), AnymalBRoughCfgPPO() )
-task_registry.register( "a1", LeggedRobot, A1RoughCfg(), A1RoughCfgPPO() )
+task_registry.register( "a1", LeggedRobot, A1RoughCfg(), A1RoughCfgPPO())
+task_registry.register( "a1_flat", LeggedRobot, A1FlatCfg(), A1FlatCfgPPO())
+task_registry.register( "a1_flat_throt", A1, A1FlatCfg(), A1FlatCfgPPO())
+#task_registry.register( "mc_flat", MiniCheetah, MiniCheetahFlatCfg(), MiniCheetahFlatCfgPPO() )
+#task_registry.register( "mc_rough", LeggedRobot, MiniCheetahRoughCfg(), MiniCheetahRoughCfgPPO() )
+#task_registry.register( "mc_flat_throt", MiniCheetah, MiniCheetahFlatCfg(), MiniCheetahFlatCfgPPO() )
+#task_registry.register( "mc_act", MiniCheetah, MiniCheetahActuatorModelCfg(), MiniCheetahActuatorModelCfgPPO() )
+task_registry.register( "pat", Pat, PatCfg(), PatCfgPPO() )
 task_registry.register( "cassie", Cassie, CassieRoughCfg(), CassieRoughCfgPPO() )

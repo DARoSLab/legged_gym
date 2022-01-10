@@ -1,0 +1,219 @@
+<?xml version="1.0" ?>
+<robot name="mini_cheetah_vision" xmlns:xacro="http://ros.org/wiki/xacro">
+  <!--<selfCollide>true</selfCollide>-->
+  <link name="base">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <box size="0.001 0.001 0.001"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="floating_base" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="base"/>
+    <child link="trunk"/>
+  </joint>
+  <link name="trunk">
+    <inertial>
+      <mass value="5.70984"/>
+      <origin xyz="0.03963 0.001 -0.030"/>
+      <inertia ixx="0.03286" ixy="-0.00006" ixz="-0.00024" iyy="0.03365" iyz="0.00535" izz="0.00916"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="../meshes/torso.dae" scale="1 1 1"/>
+      </geometry>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0.125"/>
+        <geometry>
+            <!-- <box size="0.10 0.20 0.25"/> -->
+            <box size="0.10 0.20 0.25"/>
+        </geometry>
+    </collision>
+  </link>
+  <!--Right Leg-->
+  <joint name="R_hip_joint" type="revolute">
+    <axis xyz="1 0 0"/>
+    <origin rpy="0 0 0" xyz="0.0015 -0.045 -0.06827"/>
+    <parent link="trunk"/>
+    <child link="R_hip"/>
+    <dynamics damping="0.01" friction="0.2"/>
+    <limit effort="17" lower="-0.8" upper="0.8" velocity="40"/>
+  </joint>
+  <link name="R_hip">
+    <inertial>
+      <mass value="0.53974"/>
+      <origin xyz="0.05445 -0.00295 -0.0003"/>
+      <inertia ixx="0.000439" ixy="-0.000004" ixz="-0.000004" iyy="0.000759" iyz="0.000003" izz="0.000498"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="../meshes/hip_r.dae" scale="1 1 1"/>
+      </geometry>
+      <!--<origin rpy="0 0 0" xyz="0.0015 -0.045 -0.06827"/>-->
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </visual>
+  </link>
+
+  <joint name="R_thigh_joint" type="revolute">
+    <axis xyz="0 1 0"/>
+    <origin rpy="0 0 0" xyz="0.059 -0.01525 0"/>
+    <parent link="R_hip"/>
+    <child link="R_thigh"/>
+    <dynamics damping="0.01" friction="0.2"/>
+    <limit effort="17" lower="-1.5" upper="1.5" velocity="40"/>
+  </joint>
+  <link name="R_thigh">
+    <inertial>
+      <mass value="0.7441"/>
+      <origin xyz="0.0014 -0.0317 -0.0206"/>
+      <inertia ixx="0.002522" ixy="0.00002" ixz="-0.00012" iyy="0.00266" iyz="-0.0003" izz="0.000657"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="../meshes/thigh_r.dae" scale="1 1 1"/>
+      </geometry>
+      <!--<origin rpy="0 0 0" xyz="0.059 -0.01525 0"/>-->
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </visual>
+  </link>
+
+  <joint name="R_calf_joint" type="revolute">
+    <axis xyz="0 1 0"/>
+    <origin rpy="0 0 0" xyz="0.01741 -0.05129 -0.2078"/>
+    <parent link="R_thigh"/>
+    <child link="R_calf"/>
+    <dynamics damping="0.01" friction="0.2"/>
+    <limit effort="17" lower="-2.5" upper="1.5" velocity="40"/>
+  </joint>
+  <link name="R_calf">
+    <inertial>
+      <mass value="0.12521"/>
+      <origin xyz="0.0030 -0.0013 -0.0705"/>
+      <inertia ixx="0.000793" ixy="0.000001" ixz="-0.00003" iyy="0.000801" iyz="-0.000017" izz="0.000019"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="../meshes/shank_r.dae" scale="1 1 1"/>
+      </geometry>
+      <!--<origin rpy="0 0 0" xyz="0 -0.05129 -0.2078"/>-->
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 -0.09"/>
+      <geometry>
+        <box size="0.016 0.016 0.1955"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="R_foot_fixed" type="fixed" dont_collapse="true">
+    <origin rpy="0 0 0" xyz="0 0.0 -0.195"/>
+    <parent link="R_calf"/>
+    <child link="R_foot"/>
+  </joint>
+  <!-- this link is only for collision -->
+  <link name="R_foot">
+    <collision>
+      <origin rpy="0.0 0.0 0" xyz="0 0.0 0.0"/>
+      <geometry>
+        <sphere radius="0.02"/>
+      </geometry>
+    </collision>
+  </link>
+  <!--Left Leg-->
+  <joint name="L_hip_joint" type="revolute">
+    <axis xyz="1 0 0"/>
+    <origin rpy="0 0 0" xyz="0.0015 0.045 -0.06827"/>
+    <parent link="trunk"/>
+    <child link="L_hip"/>
+    <dynamics damping="0.01" friction="0.2"/>
+    <limit effort="17" lower="-0.8" upper="0.8" velocity="40"/>
+  </joint>
+  <link name="L_hip">
+    <inertial>
+      <mass value="0.53974"/>
+      <origin xyz="0.05445 0.00295 -0.0003"/>
+      <inertia ixx="0.000439" ixy="-0.000004" ixz="-0.000004" iyy="0.000759" iyz="0.000003" izz="0.000498"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="../meshes/hip_l.dae" scale="1 1 1"/>
+      </geometry>
+      <!--<origin rpy="0 0 0" xyz="0.0015 -0.045 -0.06827"/>-->
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </visual>
+  </link>
+
+  <joint name="L_thigh_joint" type="revolute">
+    <axis xyz="0 1 0"/>
+    <origin rpy="0 0 0" xyz="0.059 0.01525 0"/>
+    <parent link="L_hip"/>
+    <child link="L_thigh"/>
+    <dynamics damping="0.01" friction="0.2"/>
+    <limit effort="17" lower="-1.5" upper="1.5" velocity="40"/>
+  </joint>
+  <link name="L_thigh">
+    <inertial>
+      <mass value="0.7441"/>
+      <origin xyz="0.0014 0.0317 -0.0206"/>
+      <inertia ixx="0.002522" ixy="0.00002" ixz="-0.00012" iyy="0.00266" iyz="-0.0003" izz="0.000657"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="../meshes/thigh_l.dae" scale="1 1 1"/>
+      </geometry>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </visual>
+  </link>
+
+  <joint name="L_calf_joint" type="revolute">
+    <axis xyz="0 1 0"/>
+    <!--<origin rpy="0 0 0" xyz="0 0.05129 -0.2078"/>-->
+    <origin rpy="0 0 0" xyz="0.01741 0.05129 -0.2078"/>
+    <parent link="L_thigh"/>
+    <child link="L_calf"/>
+    <dynamics damping="0.01" friction="0.2"/>
+    <limit effort="17" lower="-2.5" upper="1.5" velocity="40"/>
+  </joint>
+  <link name="L_calf">
+    <inertial>
+      <mass value="0.12521"/>
+      <origin xyz="0.0030 0.0013 -0.0705"/>
+      <inertia ixx="0.000793" ixy="0.000001" ixz="-0.00003" iyy="0.000801" iyz="-0.000017" izz="0.000019"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="../meshes/shank_l.dae" scale="1 1 1"/>
+      </geometry>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 -0.09"/>
+      <geometry>
+        <box size="0.016 0.016 0.1955"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="L_foot_fixed" type="fixed" dont_collapse="true">
+    <origin rpy="0 0 0" xyz="0 0.0 -0.195"/>
+    <parent link="L_calf"/>
+    <child link="L_foot"/>
+  </joint>
+  <!-- this link is only for collision -->
+  <link name="L_foot">
+    <collision>
+      <origin rpy="0.0 0.0 0" xyz="0 0 0"/>
+      <geometry>
+        <sphere radius="0.0185"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.06"/>
+      <inertia ixx="9.6e-06" ixy="0.0" ixz="0.0" iyy="9.6e-06" iyz="0.0" izz="9.6e-06"/>
+    </inertial>
+  </link>
+</robot>
