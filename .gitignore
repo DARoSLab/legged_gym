@@ -7,6 +7,7 @@
 node_modules/
 dist/
 
+*.pickle
 # Compiled Java class files
 *.class
 

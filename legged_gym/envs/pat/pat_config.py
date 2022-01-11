@@ -35,15 +35,18 @@ class PatCfg( LeggedRobotCfg ):
         swing_time = 0.33
     class foot_placement():
         swing_height = 0.05
-        hight_des = 0.42
+        hight_des = 0.39
         thigh_offset = 0.04
         kappa=-0.06
         t_prime=0.19
         alpha = 0.5 #lift swing ratio
         omega = math.sqrt(9.81/hight_des)
+        default_foot_loc = [0, 0.06, 0]
         fp_type = 'Donghyun'
+        x_step_limit = [-0.2, 0.2]
+        y_step_limit = [0.03, 0.15]
     class init_state( LeggedRobotCfg.init_state ):
-        pos = [0.0, 0.0, 0.42] # x,y,z [m]
+        pos = [0.0, 0.0, 0.39] # x,y,z [m]
         # default_joint_angles = { # = target angles [rad] when action = 0.0
         #     'L_hip_joint': 0.0,   # [rad]
         #     'R_hip_joint': 0.0,   # [rad]
@@ -73,12 +76,12 @@ class PatCfg( LeggedRobotCfg ):
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
         control_type = 'J'
-        kpCartesian = 1500
+        kpCartesian = 3000
         kdCartesian = 2.0
         stiffness = {'joint': 20.}  # [N*m/rad]
         damping = {'joint': 0.5}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
-        action_scale = 0.25
+        action_scale = 10
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 4
     class commands(LeggedRobotCfg.commands):
@@ -94,12 +97,21 @@ class PatCfg( LeggedRobotCfg ):
         terminate_after_contacts_on = ["base"]
         self_collisions = 1 # 1 to disable, 0 to enable...bitwise filter
         flip_visual_attachments = True
+        fix_base_link = False
         # collapse_fixed_joints = False
+    class domain_rand:
+        randomize_friction = False
+        friction_range = [0.5, 1.25]
+        randomize_base_mass = False
+        added_mass_range = [-1., 1.]
+        push_robots = False
+        push_interval_s = 15
+        max_push_vel_xy = 1.
     class rewards( LeggedRobotCfg.rewards ):
         # soft_dof_pos_limit = 0.9
-        base_height_target = 0.42
+        base_height_target = 0.39
         class scales( LeggedRobotCfg.rewards.scales ):
-            torques = -0.0002
+            # torques = -0.0002
             # dof_pos_limits = -10.0
             # no_fly = 20.
             base_height = -20.0

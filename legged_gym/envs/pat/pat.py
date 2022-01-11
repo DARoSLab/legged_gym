@@ -56,10 +56,12 @@ class Pat(LeggedRobot):
         self._body_acc_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
 
         self._lf_position_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
+        self._lf_p_mid_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
         self._lf_vel_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
         self._lf_acc_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
 
         self._rf_position_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
+        self._rf_p_mid_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
         self._rf_vel_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
         self._rf_acc_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
 
@@ -91,14 +93,17 @@ class Pat(LeggedRobot):
         # For pat, tensor shape is (self.num_envs, 10, 6, 9)
         self._jacobian = self.gym.acquire_jacobian_tensor(self.sim, "anymal")
         self.jacobian = gymtorch.wrap_tensor(self._jacobian)
-        self._Jc = to_torch(np.zeros((self.num_envs, 6, 12), dtype=np.float32), device=self.device)
+        if cfg.asset.fix_base_link:
+            self._Jc = to_torch(np.zeros((self.num_envs, 6, 6), dtype=np.float32), device=self.device)
+        else:
+            self._Jc = to_torch(np.zeros((self.num_envs, 6, 12), dtype=np.float32), device=self.device)
 
-        # Contact Jacobian entries
-        LF_index = 5 #gym.get_asset_rigid_body_dict(pat_asset)["L_foot"]
-        RF_index = 9 #gym.get_asset_rigid_body_dict(pat_asset)["R_foot"]
-
-        self._j_lf = self.jacobian[:, LF_index - 1, :]
-        self._j_rf = self.jacobian[:, RF_index - 1, :]
+        # # Contact Jacobian entries
+        # LF_index = 5 #gym.get_asset_rigid_body_dict(pat_asset)["L_foot"]
+        # RF_index = 9 #gym.get_asset_rigid_body_dict(pat_asset)["R_foot"]
+        #
+        # self._j_lf = self.jacobian[:, LF_index - 1, :]
+        # self._j_rf = self.jacobian[:, RF_index - 1, :]
 
         self._rb_states = self.gym.acquire_rigid_body_state_tensor(self.sim)
         self.rb_states = gymtorch.wrap_tensor(self._rb_states)
@@ -174,8 +179,10 @@ class Pat(LeggedRobot):
             # create env instance
             env_handle = self.gym.create_env(self.sim, env_lower, env_upper, int(np.sqrt(self.num_envs)))
             pos = self.env_origins[i].clone()
-            pos[:2] += torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
+
+            # pos[:2] += torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
             start_pose.p = gymapi.Vec3(*pos)
+            # start_pose.p = gymapi.Vec3(*self.cfg.init_state.pos)
 
             rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
             self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
@@ -198,6 +205,10 @@ class Pat(LeggedRobot):
             self.lthigh_idxs.append(lthigh_idx)
             rthigh_idx = self.gym.find_actor_rigid_body_index(env_handle, anymal_handle, "R_thigh", gymapi.DOMAIN_SIM)
             self.rthigh_idxs.append(rthigh_idx)
+        # Contact Jacobian entries
+        self.LF_index = self.gym.get_asset_rigid_body_dict(robot_asset)["L_foot"]
+        self.RF_index = self.gym.get_asset_rigid_body_dict(robot_asset)["R_foot"]
+
 
 
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
@@ -240,6 +251,8 @@ class Pat(LeggedRobot):
 
     def _build_contact_jacobian(self):
         self.gym.refresh_jacobian_tensors(self.sim)
+        self._j_lf = self.jacobian[:, self.LF_index - 1, :]
+        self._j_rf = self.jacobian[:, self.RF_index - 1, :]
         self._Jc[:, :3, :] = self._j_lf[:, :3, :] #position jacobian only
         self._Jc[:, 3:6, :] = self._j_rf[:, :3, :]
     def _update_gait_info(self):
@@ -251,8 +264,8 @@ class Pat(LeggedRobot):
         # _sstance_l_idx = torch.logical_and(torch.logical_not(_dstance_idx), (self._phase<(2./3)).squeeze()) #single stance left foot stance
         # _sstance_r_idx =  (self._phase>(2./3)).squeeze() #right foot stance
 
-        _dstance_idx = (self._phase<0).squeeze() # no double stance
-        _sstance_l_idx = (self._phase<=0.5).squeeze() #single stance left foot stance
+        _dstance_idx = (self._phase<0).squeeze() # double stance
+        _sstance_l_idx = torch.logical_and(torch.logical_not(_dstance_idx), (self._phase<0.5).squeeze()) #single stance left foot stance
         _sstance_r_idx =  (self._phase>0.5).squeeze() #right foot stance
 
         self._swing_states[_dstance_idx, 0] = 0.0
@@ -271,6 +284,9 @@ class Pat(LeggedRobot):
 
 
         # self._swing_phases[_sstance_l_idx, 0] = 3*(self._phase[_sstance_l_idx]-1.0/3).squeeze()
+        self._swing_phases[_dstance_idx, 0] = 0.0
+        self._swing_phases[_dstance_idx, 1] = 0.0
+
         self._swing_phases[_sstance_l_idx, 0] = 2*(self._phase[_sstance_l_idx]).squeeze()
         self._swing_phases[_sstance_l_idx, 1] = 0.0
 
@@ -284,14 +300,15 @@ class Pat(LeggedRobot):
         kappa = torch.zeros((2, 1), device=self.device)
         kappa[:] = self.cfg.foot_placement.kappa
         omega = self.cfg.foot_placement.omega
+        self._body_position = self.rb_states[self.trunk_idxs, :3]
 
         ll_swing_idx = self._swing_states[:, 0]>0.0
         rl_swing_idx = self._swing_states[:, 1]>0.0
         stance_foot_loc = torch.zeros_like(self._lf_position)
         self._lf_pf_des = torch.zeros_like(self._lf_position)
         self._rf_pf_des = torch.zeros_like(self._lf_position)
-        self._lf_p_mid_des = torch.zeros_like(self._lf_position)
-        self._rf_p_mid_des = torch.zeros_like(self._lf_position)
+        # self._lf_p_mid_des = torch.zeros_like(self._lf_position)
+        # self._rf_p_mid_des = torch.zeros_like(self._lf_position)
         stance_foot_loc[ll_swing_idx] = self._rf_position[ll_swing_idx] #right foot stance
         stance_foot_loc[rl_swing_idx] = self._lf_position[rl_swing_idx] #left foot stance
 
@@ -299,7 +316,6 @@ class Pat(LeggedRobot):
         swing_time_remaining = torch.zeros_like(self._phase)
         swing_time_remaining[rl_swing_idx] = 2*self._swing_time*(1-self._phase[rl_swing_idx])# Right leg stance first
         swing_time_remaining[ll_swing_idx] = self._swing_time*(1-2*self._phase[ll_swing_idx])
-
         A = 0.5*((self._com_position[:, :2] - stance_foot_loc[:, :2]) + self._com_vel[:, :2]/omega) #Nx1
         B = 0.5*((self._com_position[:, :2] - stance_foot_loc[:, :2]) - self._com_vel[:, :2]/omega)
 
@@ -312,20 +328,27 @@ class Pat(LeggedRobot):
                                     - torch.bmm(B.view(-1, 2, 1), torch.exp(-omega * swing_time_remaining).view(-1, 1, 1)))
 
         exp_weight = 1/(omega*torch.tanh(omega * t_prime)) #coth
-
         target_loc = torch.zeros_like(self._lf_position)
-        target_loc[:, :2] = switching_state_pos.view(-1, 2)@(1-kappa) + switching_state_vel.view(-1, 2) @ exp_weight
-        target_loc[:, 2] = 0.
+
+        target_loc[:, :2] = (switching_state_pos*(1-kappa) + switching_state_vel*exp_weight).view(-1, 2)
+        target_loc[:, :2] += (self.env_origins[:, :2].view(-1, 2, 1) * kappa).view(-1, 2)
+        target_loc[:, 2] = -0.02
 
         b_positive_sidestep = ll_swing_idx
         target_loc = self._step_length_check(target_loc, b_positive_sidestep, stance_foot_loc)
         self._lf_pf_des[ll_swing_idx] = target_loc[ll_swing_idx]
         self._rf_pf_des[rl_swing_idx] = target_loc[rl_swing_idx]
 
-        self._lf_p_mid_des[rl_swing_idx, :] = stance_foot_loc[rl_swing_idx, :] #left stance
-        self._lf_p_mid_des[rl_swing_idx, 2] = self.cfg.foot_placement.swing_height #swing height
-        self._rf_p_mid_des[ll_swing_idx, :] = stance_foot_loc[ll_swing_idx] #right stance
-        self._rf_p_mid_des[ll_swing_idx, 2] = self.cfg.foot_placement.swing_height #swing height
+        # self._lf_p_mid_des[rl_swing_idx, :] = stance_foot_loc[rl_swing_idx, :] #left stance
+        # self._lf_p_mid_des[rl_swing_idx, 2] = self.cfg.foot_placement.swing_height #swing height
+        # self._rf_p_mid_des[ll_swing_idx, :] = stance_foot_loc[ll_swing_idx] #right stance
+        # self._rf_p_mid_des[ll_swing_idx, 2] = self.cfg.foot_placement.swing_height #swing height
+        self._lf_p_mid_des[:, 0] = self.env_origins[:, 0] + self.cfg.foot_placement.default_foot_loc[0];
+        self._lf_p_mid_des[:, 1] = self.env_origins[:, 1] + self.cfg.foot_placement.default_foot_loc[1];
+        self._lf_p_mid_des[:, 2] = self.cfg.foot_placement.swing_height
+        self._rf_p_mid_des[:, 0] = self.env_origins[:, 0] + self.cfg.foot_placement.default_foot_loc[0];
+        self._rf_p_mid_des[:, 1] = self.env_origins[:, 1] + -self.cfg.foot_placement.default_foot_loc[1];
+        self._rf_p_mid_des[:, 2] = self.cfg.foot_placement.swing_height
 
     def _step_length_check(self, target_loc, b_positive_sidestep, stance_foot):
         # X limit check
@@ -465,14 +488,13 @@ class Pat(LeggedRobot):
         #principle of vertical impulse scaling
         # x y
         self._Fr[ll_stance_idx, :2, 0] = actions_scaled[ll_stance_idx, :2] #N x,y component
-        self._Fr[rl_stance_idx, :2, 0] = actions_scaled[rl_stance_idx, 3:5] #N x,y component
+        self._Fr[rl_stance_idx, 3:5, 0] = actions_scaled[rl_stance_idx, 3:5] #N x,y component
 
-        self._Fr[ll_stance_idx, 2, 0] = (-8.606*9.8*(3.0/2.0)*(0.25)*ll_stance_idx)[ll_stance_idx]+actions_scaled[ll_stance_idx, 2] #N z component
-        self._Fr[rl_stance_idx, 5, 0] = (-8.606*9.8*(3.0/2.0)*(0.25)*rl_stance_idx)[rl_stance_idx]+actions_scaled[rl_stance_idx, 5]
-
+        self._Fr[ll_stance_idx, 2, 0] = -8.606*9.8*2.0 + actions_scaled[ll_stance_idx, 2] #N z component
+        self._Fr[rl_stance_idx, 5, 0] = -8.606*9.8*2.0 + actions_scaled[rl_stance_idx, 5]
         # swing reaction force 0
-        self._Fr[torch.logical_not(ll_stance_idx), :] = 0 #N z component
-        self._Fr[torch.logical_not(rl_stance_idx), :] = 0
+        self._Fr[torch.logical_not(ll_stance_idx), :3] = 0 #N z component
+        self._Fr[torch.logical_not(rl_stance_idx), 3:] = 0
         self._tau_stance = torch.bmm(self._Jc.transpose(1, 2), self._Fr)
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -502,10 +524,30 @@ class Pat(LeggedRobot):
             self._compute_swing_trajectory()
             self._swing_impedence_control()
             self._stance_jt_control(actions_scaled)
-            torques = (self._tau_swing + self._tau_stance)[:, 6:, 0].contiguous()
+            if self.cfg.asset.fix_base_link:
+                torques = (self._tau_swing + self._tau_stance).view(self.torques.shape)
+            else:
+                torques = (self._tau_swing + self._tau_stance)[:, 6:, 0].contiguous()
         else:
             raise NameError(f"Unknown controller type: {control_type}")
         return torch.clip(torques, -self.torque_limits, self.torque_limits)
+
+    def _reset_root_states(self, env_ids):
+        """ Resets ROOT states position and velocities of selected environmments
+            Sets base position based on the curriculum
+            Selects randomized base velocities within -0.5:0.5 [m/s, rad/s]
+        Args:
+            env_ids (List[int]): Environemnt ids
+        """
+
+        self.root_states[env_ids] = self.base_init_state
+        self.root_states[env_ids, :3] += self.env_origins[env_ids]
+        # base velocities
+        # self.root_states[env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6), device=self.device) # [7:10]: lin vel, [10:13]: ang vel
+        env_ids_int32 = env_ids.to(dtype=torch.int32)
+        self.gym.set_actor_root_state_tensor_indexed(self.sim,
+                                                     gymtorch.unwrap_tensor(self.root_states),
+                                                     gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
 
     def _reward_no_fly(self):
         contacts = self.contact_forces[:, self.feet_indices, 2] > 0.1

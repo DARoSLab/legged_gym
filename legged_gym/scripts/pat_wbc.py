@@ -28,27 +28,9 @@ import time
 import matplotlib.pyplot as plt
 #pytorch3d https://github.com/facebookresearch/pytorch3d
 from pytorch3d.transforms import quaternion_to_matrix, so3_log_map
+from legged_gym.envs.pat.pat_config import PatCfg
 
-# def _quaternionToRotationMatrix(q):
-#     global device
-#     # e0 = q[0]
-#     # e1 = q[1]
-#     # e2 = q[2]
-#     # e3 = q[3]
-#     e0 = q[3]
-#     e1 = q[0]
-#     e2 = q[1]
-#     e3 = q[2]
-#
-#     R = np.array([[1 - 2 * (e2 * e2 + e3 * e3), 2 * (e1 * e2 - e0 * e3), 2 * (e1 * e3 + e0 * e2)],
-#                   [2 * (e1 * e2 + e0 * e3), 1 - 2 * (e1 * e1 + e3 * e3), 2 * (e2 * e3 - e0 * e1)],
-#                   [2 * (e1 * e3 - e0 * e2), 2 * (e2 * e3 + e0 * e1), 1 - 2 * (e1 * e1 + e2 * e2)]], dtype=np.float32).T
-#
-#     return to_torch(R, device=device)
-#
-
- #
- # Cubic bezier interpolation between y0 and yf.  x is between 0 and 1
+print(PatCfg.init_state.default_joint_angles)
 def cubicBezier(y0, yf, x):
     dim = y0.shape[1]
     yDiff = (yf - y0).view(-1, dim, 1)
@@ -138,7 +120,6 @@ def _update_gait_info():
 
     _swing_phases[_dstance_idx, 0] = 0.0
     _swing_phases[_dstance_idx, 1] = 0.0
-
 
 
     # _swing_phases[_sstance_l_idx, 0] = 3*(_phase[_sstance_l_idx]-1.0/3).squeeze()
@@ -236,8 +217,8 @@ def _capture_point_fp():
     pass
 def _compute_com():
     global _rb_positions, _rb_vels, _rb_masses, _com_position, _com_vel, _num_bodies
-    _com_position = torch.sum(_rb_positions*_rb_masses.view(1, _num_bodies, 1), dim=1)/torch.sum(_rb_masses)
-    _com_vel = torch.sum(_rb_vels*_rb_masses.view(1, _num_bodies, 1), dim=1)/torch.sum(_rb_masses)
+    _com_position = torch.sum(_rb_positions[:, :_num_bodies, :]*_rb_masses[:_num_bodies].view(1, _num_bodies, 1), dim=1)/torch.sum(_rb_masses)
+    _com_vel = torch.sum(_rb_vels[:, :_num_bodies, :]*_rb_masses[:_num_bodies].view(1, _num_bodies, 1), dim=1)/torch.sum(_rb_masses)
 
 
 def _donghyun_fp(continous_update=True):
@@ -246,8 +227,7 @@ def _donghyun_fp(continous_update=True):
            _body_position, _com_position, _com_vel, _swing_time, device, _phase, _lf_p_mid_des,\
             _rf_p_mid_des, _swing_height, _kappa, _t_prime
 
-    com_height = 0.40
-    omega_ = math.sqrt(9.81/com_height)
+    omega_ = PatCfg.foot_placement.omega
     ll_swing_idx = _swing_states[:, 0]>0.0
     rl_swing_idx = _swing_states[:, 1]>0.0
 
@@ -259,20 +239,26 @@ def _donghyun_fp(continous_update=True):
     stance_foot_loc[rl_swing_idx] = _lf_position[rl_swing_idx] #left foot stance
     # _lf_p_mid = torch.zeros_like(_lf_position)
     # _rf_p_mid = torch.zeros_like(_lf_position)
+    _lf_p_mid_des[:, 0] = _body_position[:, 0] + PatCfg.foot_placement.default_foot_loc[0];
+    _lf_p_mid_des[:, 1] = _body_position[:, 1] + PatCfg.foot_placement.default_foot_loc[1];
+    _lf_p_mid_des[:, 2] = PatCfg.foot_placement.swing_height;
+    _rf_p_mid_des[:, 0] = _body_position[:, 0] + PatCfg.foot_placement.default_foot_loc[0];
+    _rf_p_mid_des[:, 1] = _body_position[:, 1] +-PatCfg.foot_placement.default_foot_loc[1];
+    _rf_p_mid_des[:, 2] = PatCfg.foot_placement.swing_height;
 
-    _lf_p_mid_des[rl_swing_idx, :] = stance_foot_loc[rl_swing_idx, :] #left stance
-    _lf_p_mid_des[rl_swing_idx, 2] = _swing_height #swing height
-    _rf_p_mid_des[ll_swing_idx, :] = stance_foot_loc[ll_swing_idx] #right stance
-    _rf_p_mid_des[ll_swing_idx, 2] = _swing_height #swing height
+    # _lf_p_mid_des[rl_swing_idx, :] = stance_foot_loc[rl_swing_idx, :] #left stance
+    # _lf_p_mid_des[rl_swing_idx, 2] = _swing_height #swing height
+    # _rf_p_mid_des[ll_swing_idx, :] = stance_foot_loc[ll_swing_idx] #right stance
+    # _rf_p_mid_des[ll_swing_idx, 2] = _swing_height #swing height
 
     N = _lf_position.shape[0]
     swing_time_remaining = torch.zeros((N, 1), device=device)
     swing_time_remaining[rl_swing_idx] = 2*_swing_time*(1-_phase[rl_swing_idx])# Right leg stance first
     swing_time_remaining[ll_swing_idx] = _swing_time*(1-2*_phase[ll_swing_idx])
-    print("_phase: ", _phase[0])
-    print("com: ", _com_position[0])
-    print("com_vel: ", _com_vel[0])
-    print("swing_time: ", swing_time_remaining[0])
+    # print("_phase: ", _phase[0])
+    # print("com: ", _com_position[0])
+    # print("com_vel: ", _com_vel[0])
+    # print("swing_time: ", swing_time_remaining[0])
 
 
     A = 0.5*((_com_position[:, :2] - stance_foot_loc[:, :2]) + _com_vel[:, :2]/omega_) #Nx1
@@ -291,27 +277,27 @@ def _donghyun_fp(continous_update=True):
 
 
     target_loc = torch.zeros_like(_lf_position)
-    target_loc[:, :2] = switching_state_pos.view(-1, 2)@(1-_kappa) + switching_state_vel.view(-1, 2) @ exp_weight
-    target_loc[:, 2] = 0.
+    target_loc[:, :2] = (switching_state_pos*(1-_kappa) + switching_state_vel * exp_weight).view(-1, 2)
+    target_loc[:, 2] = -0.002
 
     b_positive_sidestep = ll_swing_idx
 
     target_loc = _step_length_check(target_loc, b_positive_sidestep, stance_foot_loc)
     _lf_pf_des[ll_swing_idx] = target_loc[ll_swing_idx]
     _rf_pf_des[rl_swing_idx] = target_loc[rl_swing_idx]
-    print("_lf_pf_des: ", _lf_pf_des[0], _lf_position[0])
-    print("_rf_pf_des: ", _rf_pf_des[0], _rf_position[0])
+    # print("_lf_pf_des: ", _lf_pf_des[0], _lf_position[0])
+    # print("_rf_pf_des: ", _rf_pf_des[0], _rf_position[0])
 def _step_length_check(target_loc, b_positive_sidestep, stance_foot):
     global device
     # X limit check
 
     x_step_length_limit_ = torch.zeros((2,1), device=device)
-    x_step_length_limit_[0] = -0.1
-    x_step_length_limit_[1] = 0.1
+    x_step_length_limit_[0] = PatCfg.foot_placement.x_step_limit[0]
+    x_step_length_limit_[1] = PatCfg.foot_placement.x_step_limit[1]
 
     y_step_length_limit_ = torch.zeros((2,1), device=device)
-    y_step_length_limit_[0] = 0.03 #min
-    y_step_length_limit_[1] = 0.12 #max
+    y_step_length_limit_[0] = PatCfg.foot_placement.y_step_limit[0]
+    y_step_length_limit_[1] = PatCfg.foot_placement.y_step_limit[1]
 
     #X LIMIT CHECK
     x_step_length = target_loc[:, 0] - stance_foot[:, 0]
@@ -632,7 +618,7 @@ device = 'cpu'
 sim_params = gymapi.SimParams()
 sim_params.up_axis = gymapi.UP_AXIS_Z
 sim_params.gravity = gymapi.Vec3(0.0, 0.0, -9.8)
-sim_params.dt = 1.0 / 60.0
+sim_params.dt = 0.005 #1.0 / 60.0
 sim_params.substeps = 2
 sim_params.use_gpu_pipeline = False #args.use_gpu_pipeline
 if args.physics_engine == gymapi.SIM_PHYSX:
@@ -664,7 +650,7 @@ asset_root = "../../resources/robots/"
 pat_asset_file = "pat/urdf/pat.urdf"
 asset_options = gymapi.AssetOptions()
 asset_options.armature = 0.01
-asset_options.fix_base_link = False
+asset_options.fix_base_link = PatCfg.asset.fix_base_link
 asset_options.disable_gravity = False
 asset_options.flip_visual_attachments = True
 asset_options.collapse_fixed_joints = True
@@ -691,7 +677,12 @@ pat_dof_props["damping"].fill(0.0)
 # default dof states and position targets
 pat_num_dofs = gym.get_asset_dof_count(pat_asset)
 default_dof_pos = np.zeros(pat_num_dofs, dtype=np.float32)
-
+default_dof_pos[0] = PatCfg.init_state.default_joint_angles['L_hip_joint']
+default_dof_pos[1] = PatCfg.init_state.default_joint_angles['L_thigh_joint']
+default_dof_pos[2] = PatCfg.init_state.default_joint_angles['L_calf_joint']
+default_dof_pos[3] = PatCfg.init_state.default_joint_angles['R_hip_joint']
+default_dof_pos[4] = PatCfg.init_state.default_joint_angles['R_thigh_joint']
+default_dof_pos[5] = PatCfg.init_state.default_joint_angles['R_calf_joint']
 default_dof_state = np.zeros(pat_num_dofs, gymapi.DofState.dtype)
 default_dof_state["pos"] = default_dof_pos
 # send to torch
@@ -706,7 +697,15 @@ env_upper = gymapi.Vec3(spacing, spacing, spacing)
 print("Creating %d environments" % num_envs)
 
 pat_pose = gymapi.Transform()
-pat_pose.p = gymapi.Vec3(0, 0, 0.44)
+pat_pose.p = gymapi.Vec3(0, 0, PatCfg.init_state.pos[2])
+
+
+lf_des_pose = gymapi.Transform()
+lf_des_pose.p = gymapi.Vec3(0, 0.3, 0.0)
+rf_des_pose = gymapi.Transform()
+rf_des_pose.p = gymapi.Vec3(0, 0.3, 0.0)
+
+# quit()
 # print(dir(pat_pose))
 # quit()
 envs = []
@@ -731,7 +730,11 @@ gym.add_ground(sim, plane_params)
 # _init_root_state.pose = pat_pose
 # _init_root_state.vel = pat_vel
 
+
 # _init_root_state[:3]
+lf_sphere_handles = []
+rf_sphere_handles = []
+pat_handles = []
 for i in range(num_envs):
     # create env
     env = gym.create_env(sim, env_lower, env_upper, num_per_row)
@@ -739,8 +742,7 @@ for i in range(num_envs):
 
     # add pat
     pat_handle = gym.create_actor(env, pat_asset, pat_pose, "pat", i, 2)
-
-
+    pat_handles.append(pat_handle)
     # set dof properties
     gym.set_actor_dof_properties(env, pat_handle, pat_dof_props)
 
@@ -761,11 +763,29 @@ for i in range(num_envs):
     rthigh_idx = gym.find_actor_rigid_body_index(env, pat_handle, "R_thigh", gymapi.DOMAIN_SIM)
     rthigh_idxs.append(rthigh_idx)
 
-_init_root_state_tensor = to_torch(np.zeros((num_envs, 13)), device=device)
-_init_root_state_tensor[:, 2] = 0.44
-_init_root_state_tensor[:, 6] = 1.0
-_init_root_state_tensor[:, 8] = -0.09
-gym.set_actor_root_state_tensor(sim, gymtorch.unwrap_tensor(_init_root_state_tensor))
+    lf_des_sphere = gym.create_sphere(sim, 0.02, None)
+    lf_des_sphere_handle = gym.create_actor(env, lf_des_sphere, lf_des_pose, "lf_des", i, 0)
+    gym.set_rigid_body_color(env, lf_des_sphere_handle, 0, gymapi.MESH_NONE, gymapi.Vec3(0.0, 0.5, 0.0))
+    lf_sphere_handles.append(lf_des_sphere_handle)
+    #no collision with foot
+    props = gym.get_actor_rigid_shape_properties(envs[i], lf_sphere_handles[i])
+    props[0].filter = 2 # 2 && 2 == 1 !=0 mask collision with foot
+    gym.set_actor_rigid_shape_properties(envs[i], lf_sphere_handles[i], props)
+
+    rf_des_sphere = gym.create_sphere(sim, 0.02, None)
+    rf_des_sphere_handle = gym.create_actor(env, rf_des_sphere, rf_des_pose, "rf_des", i, 0)
+    gym.set_rigid_body_color(env, rf_des_sphere_handle, 0, gymapi.MESH_NONE, gymapi.Vec3(0.0, 0.0, 0.5))
+    rf_sphere_handles.append(rf_des_sphere_handle)
+    #no collision with foot
+    props = gym.get_actor_rigid_shape_properties(envs[i], rf_des_sphere_handle)
+    props[0].filter = 2 # 2 && 2 == 1 !=0 mask collision with foot
+    gym.set_actor_rigid_shape_properties(envs[i], rf_des_sphere_handle, props)
+
+# _init_root_state_tensor = to_torch(np.zeros((num_envs, 13)), device=device)
+# _init_root_state_tensor[:, 2] = 0.44
+# _init_root_state_tensor[:, 6] = 1.0
+# _init_root_state_tensor[:, 8] = -0.09
+# gym.set_actor_root_state_tensor(sim, gymtorch.unwrap_tensor(_init_root_state_tensor))
 
 # point camera at middle env
 cam_pos = gymapi.Vec3(4, 3, 2)
@@ -818,8 +838,8 @@ _rb_properties = gym.get_actor_rigid_body_properties(envs[0], 0)
 
 _rb_masses = to_torch(np.array([getattr(_rb_properties[i], 'mass') for i in range(_num_bodies)], dtype=np.float32), device=device)
 
-_rb_positions = rb_states[:, 0:3].view(num_envs, _num_bodies, 3)
-_rb_vels = rb_states[:, 7:10].view(num_envs, _num_bodies, 3)
+_rb_positions = rb_states[:, 0:3].view(num_envs, -1, 3)
+_rb_vels = rb_states[:, 7:10].view(num_envs, -1, 3)
 # DOF state tensor
 _dof_states = gym.acquire_dof_state_tensor(sim)
 dof_states = gymtorch.wrap_tensor(_dof_states)
@@ -907,24 +927,38 @@ _tau_stance = to_torch(np.zeros((num_envs, 6, 1), dtype=np.float32), device=devi
 # _swing_time = 0.5
 # _swing_height = 0.15
 # _gait_period = 3*_swing_time #double stance and two single stances
-_swing_time = 0.33
-_swing_height = 0.05
+_swing_time = PatCfg.gait.swing_time
+_swing_height = PatCfg.foot_placement.swing_height
 _gait_period = 2*_swing_time #two single stances
 _t_prime = torch.zeros((2, 1), device=device)
-_t_prime[:] = 0.193597
+_t_prime[:] = PatCfg.foot_placement.t_prime
 _kappa = torch.zeros((2, 1), device=device)
-_kappa[:] = -0.065708
+_kappa[:] = PatCfg.foot_placement.kappa
 
 _hight_des = to_torch(np.zeros((num_envs, 1), dtype=np.float32), device=device)
-_hight_des[:] = 0.44
+_hight_des[:] = PatCfg.init_state.pos[2]
 _body_vel_des[:, 0] = 0.0
 _body_vel_des[:, 1] = 0.0
 # SIM LOOP
 sim_count = 0
 lf_hist = []
 lf_hist_des = []
-while not gym.query_viewer_has_closed(viewer):
-
+_lf_des_tensor = to_torch(np.zeros((num_envs, 13)), device=device)
+rf_scale = -0.01
+logger = {}
+logger['_lf_position']=[]
+logger['_rf_position']=[]
+logger['_lf_position_des']=[]
+logger['_rf_position_des']=[]
+logger['_swing_states']=[]
+logger['_Fr']=[]
+logger['_com_position']=[]
+logger['_com_vel']=[]
+logger['_phase'] = []
+logger['_t_stamp'] = []
+step_count = 0
+log_data = False
+while step_count < 100 and not gym.query_viewer_has_closed(viewer):
     # step the physics
     gym.simulate(sim)
     gym.fetch_results(sim, True)
@@ -960,7 +994,7 @@ while not gym.query_viewer_has_closed(viewer):
     _stance_jt_control()
     # lf_hist.append(_lf_position[0, 2].numpy())
     #
-    sim_count += 1
+    # sim_count += 1
     # if sim_count > 1000:
     #
     #     plt.plot(np.array(lf_hist))
@@ -988,15 +1022,56 @@ while not gym.query_viewer_has_closed(viewer):
     #     force_positions[:, 0, 2] += 0.0
     #     gym.apply_rigid_body_force_at_pos_tensors(sim, gymtorch.unwrap_tensor(forces), gymtorch.unwrap_tensor(force_positions), gymapi.ENV_SPACE)
         # print("iter [{}] applying [{}] Nm of force".format(sim_count, forces[0, 0, 2]))
+    verts = np.zeros((4, 3), dtype=np.float32)
+    colors = np.zeros((6, 1), dtype=np.float32)
+    colors[1] = 0.5
+    colors[5] = 0.5
+    for i in range(num_envs):
+        state = gym.get_actor_rigid_body_states(envs[i], lf_sphere_handles[i], gymapi.STATE_NONE)
+        state['pose']['p'].fill((_lf_position_des[i, 0], _lf_position_des[i, 1], _lf_position_des[i, 2]))
+        state['pose']['r'].fill((0, 0, 0, 1))
+        state['vel']['linear'].fill((0, 0, 0))
+        state['vel']['angular'].fill((0, 0, 0))
+        gym.set_actor_rigid_body_states(envs[i], lf_sphere_handles[i], state, gymapi.STATE_ALL)
+        state = gym.get_actor_rigid_body_states(envs[i], rf_sphere_handles[i], gymapi.STATE_NONE)
+        state['pose']['p'].fill((_rf_position_des[i, 0], _rf_position_des[i, 1], _rf_position_des[i, 2]))
+        state['pose']['r'].fill((0, 0, 0, 1))
+        state['vel']['linear'].fill((0, 0, 0))
+        state['vel']['angular'].fill((0, 0, 0))
+        gym.set_actor_rigid_body_states(envs[i], rf_sphere_handles[i], state, gymapi.STATE_ALL)
+        #draw reaction force
+        gym.draw_env_rigid_contacts(viewer, envs[i], gymapi.Vec3(255, 0.0, 0.0), rf_scale, False)
+        verts[0, :] = _lf_position[i, :].view(-1)
+        verts[1, :] = rf_scale*_Fr[i, :3].view(-1)
+        verts[2, :] = _rf_position[i, :].view(-1)
+        verts[3, :] = rf_scale*_Fr[i, 3:].view(-1)
 
+        gym.add_lines(viewer, envs[i], 2, verts, colors)
     gym.set_dof_actuation_force_tensor(sim, gymtorch.unwrap_tensor(_tau))
 
     # update viewer
     gym.step_graphics(sim)
-    gym.draw_env_rigid_contacts(viewer, envs[0], gymapi.Vec3(255, 0.0, 0.0), -0.01, False)
     gym.draw_viewer(viewer, sim, False)
     gym.sync_frame_time(sim)
     gym.clear_lines(viewer)
+    if log_data:
+        logger['_lf_position'].append(_lf_position[0, :].view(-1).clone().numpy())
+        logger['_rf_position'].append(_rf_position[0, :].view(-1).clone().numpy())
+        logger['_lf_position_des'].append(_lf_position_des[0, :].view(-1).clone().numpy())
+        logger['_rf_position_des'].append(_rf_position_des[0, :].view(-1).clone().numpy())
+        logger['_swing_states'].append(_swing_states[0, :].view(-1).clone().numpy())
+        logger['_Fr'].append(_Fr[0, :].view(-1).clone().numpy())
+        logger['_com_position'].append(_com_position[0, :].view(-1).clone().numpy())
+        logger['_com_vel'].append(_com_vel[0, :].view(-1).clone().numpy())
+        logger['_phase'].append(_phase[0].clone().numpy())
+        logger['_t_stamp'].append(step_count*sim_params.dt)
+        step_count +=1
+    # time.sleep(1.0)
+if log_data:
+    import pickle
+    with open('log.pickle', 'wb') as handle:
+        pickle.dump(logger, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
 # cleanup
 gym.destroy_viewer(viewer)
 gym.destroy_sim(sim)

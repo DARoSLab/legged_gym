@@ -30,6 +30,7 @@
 
 from legged_gym import LEGGED_GYM_ROOT_DIR
 import os
+import time
 
 import isaacgym
 from legged_gym.envs import *
@@ -83,6 +84,7 @@ def play(args):
 
     for i in range(10*int(env.max_episode_length)):
         actions = policy(obs.detach())
+        actions[:] = 0.0
         obs, _, rews, dones, infos = env.step(actions.detach())
         if RECORD_FRAMES:
             if i % 2:
@@ -119,6 +121,7 @@ def play(args):
                     logger.log_rewards(infos["episode"], num_episodes)
         elif i==stop_rew_log:
             logger.print_rewards()
+        # time.sleep(0.5)
 
 if __name__ == '__main__':
     EXPORT_POLICY = True

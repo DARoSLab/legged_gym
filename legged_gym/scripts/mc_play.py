@@ -42,7 +42,7 @@ import torch
 def play(args):
     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
     # override some parameters for testing
-    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 1)
+    env_cfg.env.num_envs = min(env_cfg.env.num_envs, 10)
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.num_cols = 5
     env_cfg.terrain.curriculum = False
@@ -72,7 +72,7 @@ def play(args):
         print('Exported policy as jit script to: ', path)
 
     logger = Logger(env.dt)
-    robot_index = 0 # which robot is used for logging
+    robot_index = 1 # which robot is used for logging
     joint_index = 0 # which joint is used for logging
     leg_index = 0 #which leg is used for logging
     stop_state_log = 100 # number of steps before plotting states
