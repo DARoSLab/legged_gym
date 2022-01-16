@@ -34,19 +34,19 @@ class PatCfg( LeggedRobotCfg ):
     class gait():
         swing_time = 0.33
     class foot_placement():
-        swing_height = 0.05
-        hight_des = 0.39
-        thigh_offset = 0.04
-        kappa=-0.06
-        t_prime=0.19
+        swing_height = 0.03
+        hight_des = 0.46
+        thigh_offset = 0.00
+        kappa=-0.077699
+        t_prime=0.193597
         alpha = 0.5 #lift swing ratio
         omega = math.sqrt(9.81/hight_des)
         default_foot_loc = [0, 0.06, 0]
         fp_type = 'Donghyun'
         x_step_limit = [-0.2, 0.2]
-        y_step_limit = [0.03, 0.15]
+        y_step_limit = [0.03, 0.2]
     class init_state( LeggedRobotCfg.init_state ):
-        pos = [0.0, 0.0, 0.39] # x,y,z [m]
+        pos = [0.0, 0.0, 0.45] # x,y,z [m]
         # default_joint_angles = { # = target angles [rad] when action = 0.0
         #     'L_hip_joint': 0.0,   # [rad]
         #     'R_hip_joint': 0.0,   # [rad]
@@ -61,12 +61,13 @@ class PatCfg( LeggedRobotCfg ):
             'L_hip_joint': -0.16,   # [rad]
             'R_hip_joint': 0.3,   # [rad]
 
-            'L_thigh_joint': 0.75,    # [rad]
-            'R_thigh_joint': 0.75,     # [rad]
+            'L_thigh_joint': 0.55,    # [rad]
+            'R_thigh_joint': 0.55,     # [rad]
 
-            'L_calf_joint': -1.2,     # [rad]
-            'R_calf_joint': -1.2,    # [rad]
+            'L_calf_joint': -0.95,     # [rad]
+            'R_calf_joint': -0.95,    # [rad]
         }
+
     class env( LeggedRobotCfg.env ):
         num_observations = 33
         num_actions = 6

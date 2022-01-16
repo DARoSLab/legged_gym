@@ -89,6 +89,8 @@ class Pat(LeggedRobot):
         self._hight_des = to_torch(np.zeros((self.num_envs, 1), dtype=np.float32), device=self.device)
         self._hight_des[:] = cfg.foot_placement.hight_des
 
+        self.start_planning = None
+        self.planning_done = None
         # Prepare jacobian tensor
         # For pat, tensor shape is (self.num_envs, 10, 6, 9)
         self._jacobian = self.gym.acquire_jacobian_tensor(self.sim, "anymal")
@@ -316,6 +318,7 @@ class Pat(LeggedRobot):
         swing_time_remaining = torch.zeros_like(self._phase)
         swing_time_remaining[rl_swing_idx] = 2*self._swing_time*(1-self._phase[rl_swing_idx])# Right leg stance first
         swing_time_remaining[ll_swing_idx] = self._swing_time*(1-2*self._phase[ll_swing_idx])
+        #enable_planning_idx = swing_time_remaining > 0.5 * self.cfg.foot_placement.swing_time
         A = 0.5*((self._com_position[:, :2] - stance_foot_loc[:, :2]) + self._com_vel[:, :2]/omega) #Nx1
         B = 0.5*((self._com_position[:, :2] - stance_foot_loc[:, :2]) - self._com_vel[:, :2]/omega)
 
@@ -332,7 +335,7 @@ class Pat(LeggedRobot):
 
         target_loc[:, :2] = (switching_state_pos*(1-kappa) + switching_state_vel*exp_weight).view(-1, 2)
         target_loc[:, :2] += (self.env_origins[:, :2].view(-1, 2, 1) * kappa).view(-1, 2)
-        target_loc[:, 2] = -0.02
+        target_loc[:, 2] = -0.002
 
         b_positive_sidestep = ll_swing_idx
         target_loc = self._step_length_check(target_loc, b_positive_sidestep, stance_foot_loc)
