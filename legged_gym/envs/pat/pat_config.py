@@ -76,13 +76,14 @@ class PatCfg( LeggedRobotCfg ):
         measure_heights = False
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
-        control_type = 'J'
+        control_type = 'P'
         kpCartesian = 3000
         kdCartesian = 2.0
         stiffness = {'joint': 20.}  # [N*m/rad]
         damping = {'joint': 0.5}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
-        action_scale = 10
+        # action_scale = 10
+        action_scale = 0.25
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 4
     class commands(LeggedRobotCfg.commands):
@@ -98,7 +99,7 @@ class PatCfg( LeggedRobotCfg ):
         terminate_after_contacts_on = ["base"]
         self_collisions = 1 # 1 to disable, 0 to enable...bitwise filter
         flip_visual_attachments = True
-        fix_base_link = False
+        fix_base_link = True
         # collapse_fixed_joints = False
     class domain_rand:
         randomize_friction = False
@@ -125,5 +126,5 @@ class PatCfgPPO( LeggedRobotCfgPPO ):
         entropy_coef = 0.01
     class runner( LeggedRobotCfgPPO.runner ):
         run_name = ''
-        experiment_name = 'pat'
+        experiment_name = 'pat_joint'
         max_iterations = 300

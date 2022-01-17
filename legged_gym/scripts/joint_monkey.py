@@ -180,7 +180,7 @@ for i in range(num_dofs):
         print("    Upper   %f" % upper_limits[i])
 
 # set up the env grid
-num_envs = 1 #36
+num_envs = 2 #36
 num_per_row = 1
 spacing = 1 #2.5
 env_lower = gymapi.Vec3(-spacing, 0.0, -spacing)
@@ -204,8 +204,8 @@ for i in range(num_envs):
 
     # add actor
     pose = gymapi.Transform()
-    pose.p = gymapi.Vec3(0.0, 0.42, 0.0)
-    pose.r = gymapi.Quat(-0.707107, 0.0, 0.0, 0.707107)
+    pose.p = gymapi.Vec3(0.0, 0.0, 0.50)
+    # pose.r = gymapi.Quat(-0.707107, 0.0, 0.0, 0.707107)
 
     actor_handle = gym.create_actor(env, asset, pose, "actor", i, 1)
     actor_handles.append(actor_handle)
@@ -267,7 +267,7 @@ while not gym.query_viewer_has_closed(viewer):
     gym.simulate(sim)
     gym.fetch_results(sim, True)
 
-    speed = speeds[current_dof]
+    # speed = speeds[current_dof]
 
     # # animate the dofs
     # if anim_state == ANIM_SEEK_LOWER:
@@ -297,22 +297,22 @@ while not gym.query_viewer_has_closed(viewer):
         gym.clear_lines(viewer)
 
     # clone actor state in all of the environments
-    for i in range(num_envs):
+    # for i in range(num_envs):
 
-        gym.set_actor_dof_states(envs[i], actor_handles[i], dof_states, gymapi.STATE_POS)
+        # gym.set_actor_dof_states(envs[i], actor_handles[i], dof_states, gymapi.STATE_POS)
         # gym.set_actor_dof_states(envs[i], actor_handles[i+1], dof_states2, gymapi.STATE_POS)
 
-
-        if args.show_axis:
-            # get the DOF frame (origin and axis)
-            dof_handle = gym.get_actor_dof_handle(envs[i], actor_handles[i], current_dof)
-            frame = gym.get_dof_frame(envs[i], dof_handle)
-
-            # draw a line from DOF origin along the DOF axis
-            p1 = frame.origin
-            p2 = frame.origin + frame.axis * 0.7
-            color = gymapi.Vec3(1.0, 0.0, 0.0)
-            gymutil.draw_line(p1, p2, color, gym, viewer, envs[i])
+        #
+        # if args.show_axis:
+        #     # get the DOF frame (origin and axis)
+        #     dof_handle = gym.get_actor_dof_handle(envs[i], actor_handles[i], current_dof)
+        #     frame = gym.get_dof_frame(envs[i], dof_handle)
+        #
+        #     # draw a line from DOF origin along the DOF axis
+        #     p1 = frame.origin
+        #     p2 = frame.origin + frame.axis * 0.7
+        #     color = gymapi.Vec3(1.0, 0.0, 0.0)
+        #     gymutil.draw_line(p1, p2, color, gym, viewer, envs[i])
 
     # update the viewer
     gym.step_graphics(sim)

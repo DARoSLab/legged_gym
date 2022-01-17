@@ -27,10 +27,10 @@
       <origin rpy="0 0 0" xyz="0 0 0"/>
     </visual>
     <collision>
-      <origin rpy="0 0 0" xyz="0 0 0.125"/>
+      <origin rpy="0 0 0" xyz="0.05 0.0 0.125"/>
         <geometry>
             <!-- <box size="0.10 0.20 0.25"/> -->
-            <box size="0.10 0.20 0.25"/>
+            <box size="0.10 0.18 0.25"/>
         </geometry>
     </collision>
   </link>
@@ -79,6 +79,13 @@
       <!--<origin rpy="0 0 0" xyz="0.059 -0.01525 0"/>-->
       <origin rpy="0 0 0" xyz="0 0 0"/>
     </visual>
+    <collision>
+      <origin rpy="0 1.57079632679 0" xyz="0 -0.05 -0.1"/>
+      <geometry>
+        <box size="0.2 0.0245 0.034"/>
+      </geometry>
+    </collision>
+
   </link>
 
   <joint name="R_calf_joint" type="revolute">
@@ -172,6 +179,12 @@
       </geometry>
       <origin rpy="0 0 0" xyz="0 0 0"/>
     </visual>
+    <collision>
+      <origin rpy="0 1.57079632679 0" xyz="0 0.05 -0.1"/>
+      <geometry>
+        <box size="0.2 0.0245 0.034"/>
+      </geometry>
+    </collision>
   </link>
 
   <joint name="L_calf_joint" type="revolute">
