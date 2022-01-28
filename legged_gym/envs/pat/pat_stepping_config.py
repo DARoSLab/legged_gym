@@ -30,7 +30,7 @@
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 import math
-class PatCfg( LeggedRobotCfg ):
+class PatSteppingCfg( LeggedRobotCfg ):
     class gait():
         swing_time = 0.33
     class foot_placement():
@@ -82,9 +82,9 @@ class PatCfg( LeggedRobotCfg ):
     class commands(LeggedRobotCfg.commands):
         heading_command = False # if true: compute ang vel command from heading error
         class ranges(LeggedRobotCfg.commands.ranges):
-            lin_vel_x = [-0.5, 0.5] #[-0.5, 0.5] # min max [m/s]
-            lin_vel_y = [-0.5, 0.5] #[-0.5, 0.5]   # min max [m/s]
-            ang_vel_yaw = [-0.5, 0.5]    # min max [rad/s]
+            lin_vel_x = [0.0, 0.0] #[-0.5, 0.5] # min max [m/s]
+            lin_vel_y = [-0.0, 0.0] #[-0.5, 0.5]   # min max [m/s]
+            ang_vel_yaw = [-0.0, 0.0]    # min max [rad/s]
     class asset( LeggedRobotCfg.asset ):
         file = '{LEGGED_GYM_ROOT_DIR}/resources/robots/pat/urdf/pat.urdf'
         foot_name = "foot"
@@ -92,14 +92,14 @@ class PatCfg( LeggedRobotCfg ):
         terminate_after_contacts_on = ["base"]
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         flip_visual_attachments = True
-        fix_base_link = False
+        fix_base_link = True
         # collapse_fixed_joints = False
     class domain_rand:
         randomize_friction = True
         friction_range = [0.5, 1.25]
-        randomize_base_mass = True
+        randomize_base_mass = False
         added_mass_range = [-1.5, 1.5]
-        push_robots = True
+        push_robots = False
         push_interval_s = 0.2
         max_push_vel_xy = 1.
 
@@ -114,28 +114,28 @@ class PatCfg( LeggedRobotCfg ):
         class scales( LeggedRobotCfg.rewards.scales ):
             base_height = -20.0
             #penalize pitch and roll
-            orientation = -10.0
+            orientation = 0.0
             #TVR Reward
             # foot_position = -20.0
             #stance foot velocity penality
-            foot_velocity = -1.0
+            foot_velocity = 0.0
             #swing foot GRF penality
-            GRF = -0.01
+            GRF = -0.0
 
-            foot_height_ref = -10
-            slip = -0.0003
+            foot_height_ref = -5e3
+            slip = -0.0
             joint_motion = -0.000001
             target_smoothness = -0.003
-            linear_ortho_vel = 0.75
-            body_motion = 1.0
+            linear_ortho_vel = 0.0
+            body_motion = 0.0
 
             # feet_air_time =  1.0
             #
             termination = -0.0
-            tracking_lin_vel = 1.0
-            tracking_ang_vel = 0.5
-            lin_vel_z = -2.0
-            ang_vel_xy = -0.05
+            tracking_lin_vel = 2.0
+            tracking_ang_vel = 0.0
+            lin_vel_z = -0.0
+            ang_vel_xy = -0.0
             torques = -0.00001
             dof_vel = 0.0
             dof_acc = 0.0
@@ -146,12 +146,12 @@ class PatCfg( LeggedRobotCfg ):
             stand_still = -0.0
 
 
-class PatCfgPPO( LeggedRobotCfgPPO ):
+class PatSteppingCfgPPO( LeggedRobotCfgPPO ):
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         entropy_coef = 0.01
     class runner( LeggedRobotCfgPPO.runner ):
         run_name = ''
-        experiment_name = 'pat_no_tvr_all_reward'
+        experiment_name = 'pat_sim_to_real_test'
         load_run = -1 # -1 = last run
         checkpoint = -1 # -1 = last saved model
         max_iterations = 1000

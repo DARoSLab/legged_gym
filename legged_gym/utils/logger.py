@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 #
@@ -123,6 +123,17 @@ class Logger:
         if log["dof_torque"]!=[]: a.plot(time, log["dof_torque"], label='measured')
         a.set(xlabel='time [s]', ylabel='Joint Torque [Nm]', title='Torque')
         a.legend()
+
+        fig, axs = plt.subplots(1, 1)
+        a = axs
+        if log["lf_pos"]!=[] and log["rf_pos"]!=[]:
+            a.plot(time, log["lf_pos"], label='lf_z')
+            a.plot(time, log["lf_pos_des"], label='lf_z_des')
+            a.plot(time, log["rf_pos"], label='rf_z')
+            a.plot(time, log["rf_pos_des"], label='rf_z_des')
+        a.set(xlabel='time [s]', ylabel='foot height [m]', title='Foot height')
+        a.legend()
+
         plt.show()
 
     def print_rewards(self):
@@ -131,7 +142,7 @@ class Logger:
             mean = np.sum(np.array(values)) / self.num_episodes
             print(f" - {key}: {mean}")
         print(f"Total number of episodes: {self.num_episodes}")
-    
+
     def __del__(self):
         if self.plot_process is not None:
             self.plot_process.kill()
