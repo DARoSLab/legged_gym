@@ -455,6 +455,7 @@ def _build_contact_jacobian():
     _Jc[:, :3, :] = _j_lf[:, :3, :] #position jacobian only
     _Jc[:, 3:6, :] = _j_rf[:, :3, :]
     # _JcDotQdot = np.zeros(()) set to zero for now
+
 def _compute_wbc():
     global num_envs, device, _Jc, _JcDotQdot, _A, _eye, _qddot_cmd, _qdot_cmd_act, _q_cmd_act
     _build_contact_jacobian()
@@ -549,6 +550,110 @@ def _compute_torque_command():
 
     tau_ff = (torch.bmm(_A, _qddot_cmd) - torch.bmm(_Jc.transpose(1,2), _Fr))[:, 6:, :]
     _tau = tau_ff + _Kp_joint*(_q_cmd_act-_dof_pos) + _Kd_joint*(_qdot_cmd_act-_dof_vel)
+def _ik(_hip_loc, _foot_loc):#both in hip frame
+    a = 0.2 #thigh length
+    a_sq = a*a #thigh length
+    b = 0.1955 + 0.02 #shank length
+    b_sq = b*b #shank length
+    c = torch.norm(_hip_loc-_foot_loc, dim=1)
+    c_sq = torch.square(c)
+    q = torch.zeros_like(_hip_loc)
+    #abd
+    q[:, 0] = torch.atan((_hip_loc[:, 1]-_foot_loc[:, 1])/(_hip_loc[:, 2]-_foot_loc[:, 2]))
+    #knee
+    q[:, 2] = math.pi - torch.acos((a_sq + b_sq - c_sq)/(2.0*a*b))
+    beta = torch.acos((b_sq + c_sq - a_sq)/(2*b*c))
+    alpha = torch.atan((_hip_loc[:, 0]-_foot_loc[:, 0])/torch.norm((_hip_loc[:, :2]-_foot_loc[:, :2]), dim=1))
+    q[:, 1] = beta - alpha
+    return q
+
+def _compute_jt_refrence():
+    global _phase, _swing_phases, _lf_position, _rf_position, _ik_swing_ref
+
+    phi = torch.zeros_like(_swing_phases)
+    phi[:, 0] = _phase*2*math.pi
+    phi[:, 1] = (1.0 - _phase)*2*math.pi
+
+    phi = torch.fmod(phi, 2*math.pi)
+    pz = torch.zeros_like(phi)
+    t = (2./math.pi)*phi
+    swing_up_idx = torch.logical_and(phi>=0.0, phi<= math.pi/2)
+    swing_down_idx = torch.logical_and(phi>math.pi/2, phi<= math.pi)
+    pz[swing_up_idx] = _swing_height*(-2*torch.pow(t[swing_up_idx], 3)
+            + 3*torch.pow(t[swing_up_idx], 2))
+    t = (2./math.pi)*phi - 1
+    pz[swing_down_idx] = _swing_height*(2*torch.pow(t[swing_down_idx], 3)
+            -3*torch.pow(t[swing_down_idx], 2)+1)
+    _ik_swing_ref[:, 0] = 0.0
+    _ik_swing_ref[:, 1] = 0.06
+    _ik_swing_ref[:, 2] = pz[:, 0]
+    _ik_swing_ref[:, 3] = 0.0
+    _ik_swing_ref[:, 4] = -0.06
+    _ik_swing_ref[:, 5] = pz[:, 1]
+
+def get_HT(R, p, device):
+    N = R.shape[0]
+    T = torch.zeros((N, 4, 4), device=device)
+    T[:, :3, :3] = R
+    T[:, :3, 3] = p
+    T[:, 3, 3] = 1.0
+    return T
+def isaac_pytorch_3d_quat(q):
+    q_i = torch.zeros_like(q)
+    q_i[:, 0] = q[:, 3]
+    q_i[:, 1] = q[:, 0]
+    q_i[:, 2] = q[:, 1]
+    q_i[:, 3] = q[:, 2]
+    return q_i
+
+
+def _track_ik_controller():
+    global _lthigh_position, _lf_position, device
+    N = _lthigh_position.shape[0]
+    w_p_h = rb_states[lthigh_idxs, :3]
+    w_p_lf = rb_states[lf_idxs, :3]
+    w_p_la = rb_states[labd_idxs, :3]
+
+    q_h = rb_states[lthigh_idxs, 3:7]
+    q_a = rb_states[labd_idxs, 3:7]
+    q_b = rb_states[trunk_idxs, 3:7]
+
+    w_R_h = quaternion_to_matrix(isaac_pytorch_3d_quat(q_h))
+    w_R_a = quaternion_to_matrix(isaac_pytorch_3d_quat(q_a))
+    w_R_b = quaternion_to_matrix(isaac_pytorch_3d_quat(q_b))
+
+    lh_to_lf = (w_p_lf - w_p_h) #in world frame
+    labd_to_lf = (w_p_lf - w_p_la)
+
+    h_lh_to_lf = torch.bmm(w_R_h.transpose(1,2), lh_to_lf.view(-1, 3, 1))
+    a_la_to_lf = torch.bmm(w_R_a.transpose(1,2), labd_to_lf.view(-1, 3, 1))
+    w_la_to_lf = torch.bmm(w_R_a.transpose(1,2), labd_to_lf.view(-1, 3, 1))    
+    a_la_to_lf[:, 0] += 0.06
+    b = torch.norm(h_lh_to_lf[0])
+    a = 0.015
+    c = torch.norm(a_la_to_lf[0])
+    beta = torch.acos((a*a + torch.square(b) - torch.square(c))/(2*a*b))
+    # q0 = beta - math.pi/2
+    q0 = torch.atan(a_la_to_lf[:, 1]/a_la_to_lf[:, 2])
+    # print("b: ", b)
+    # print("h_lh_to_lf: ", h_lh_to_lf[0], torch.norm(h_lh_to_lf[0]))
+    print("a_la_to_lf: ", a_la_to_lf[0], torch.norm(a_la_to_lf[0]))
+    print("q0: ", q0[0])
+    # q_lf = rb_states[lf_idxs, 3:7]
+    #
+    # w_R_lf = quaternion_to_matrix(isaac_pytorch_3d_quat(q_lf))
+    #
+    # w_T_h = get_HT(w_R_h, w_p_h, device)
+    # w_T_lf = get_HT(w_R_lf, w_p_lf, device)
+    # h_T_lf  = torch.bmm(w_T_h.transpose(1,2), w_T_lf)
+    # h_p_lf = h_T_lf[:, :3, 3]
+    # print("w_T_h: ", w_T_h[0])
+    # print("w_T_lf: ", w_T_lf[0])
+    # print("h_T_lf: ", h_T_lf[0])
+    #
+    # print("p: {} d: {}".format(h_p_lf[0], torch.norm(h_p_lf[0])))
+    # print(_ik(_lthigh_position, _lf_position)[0, :])
+
 def _debug_viz():
     global _lf_pf_des, _lf_position
     gym.clear_lines(viewer)
@@ -710,6 +815,9 @@ rf_des_pose.p = gymapi.Vec3(0, 0.3, 0.0)
 # quit()
 envs = []
 trunk_idxs = []
+
+labd_idxs = []
+rabd_idxs = []
 lthigh_idxs = []
 rthigh_idxs = []
 lf_idxs = []
@@ -762,6 +870,11 @@ for i in range(num_envs):
     lthigh_idxs.append(lthigh_idx)
     rthigh_idx = gym.find_actor_rigid_body_index(env, pat_handle, "R_thigh", gymapi.DOMAIN_SIM)
     rthigh_idxs.append(rthigh_idx)
+
+    labd_idx = gym.find_actor_rigid_body_index(env, pat_handle, "L_hip", gymapi.DOMAIN_SIM)
+    labd_idxs.append(labd_idx)
+    rabd_idx = gym.find_actor_rigid_body_index(env, pat_handle, "R_hip", gymapi.DOMAIN_SIM)
+    rabd_idxs.append(rabd_idx)
 
     lf_des_sphere = gym.create_sphere(sim, 0.02, None)
     lf_des_sphere_handle = gym.create_actor(env, lf_des_sphere, lf_des_pose, "lf_des", i, 0)
@@ -992,6 +1105,7 @@ while step_count < 100 and not gym.query_viewer_has_closed(viewer):
     _build_contact_jacobian()
     _swing_impedence_control()
     _stance_jt_control()
+    _track_ik_controller()
     # lf_hist.append(_lf_position[0, 2].numpy())
     #
     # sim_count += 1

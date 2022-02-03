@@ -39,6 +39,7 @@ from .cassie.cassie import Cassie
 from .cassie.cassie_config import CassieRoughCfg, CassieRoughCfgPPO
 from .pat.pat import Pat
 from .pat.pat_config import PatCfg, PatCfgPPO
+from .pat.pat_stepping_config import PatSteppingCfg, PatSteppingCfgPPO
 
 
 import os
@@ -49,4 +50,5 @@ task_registry.register( "anymal_c_rough", Anymal, AnymalCRoughCfg(), AnymalCRoug
 task_registry.register( "anymal_b", Anymal, AnymalBRoughCfg(), AnymalBRoughCfgPPO() )
 task_registry.register( "a1", LeggedRobot, A1RoughCfg(), A1RoughCfgPPO())
 task_registry.register( "pat", Pat, PatCfg(), PatCfgPPO() )
+task_registry.register( "pat_step", Pat, PatSteppingCfg(), PatSteppingCfgPPO() )
 task_registry.register( "cassie", Cassie, CassieRoughCfg(), CassieRoughCfgPPO() )

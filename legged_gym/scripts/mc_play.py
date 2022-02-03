@@ -61,9 +61,9 @@ def play(args):
     # export policy as a jit module (used to run it from C++)
     if EXPORT_POLICY:
         path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
-        if(args.task=='mc_flat'):
-            RS_PATH = '/home/dan/Robot-Software/config/mc-vision-RL/models/'
-            export_policy_as_jit(ppo_runner.alg.actor_critic, RS_PATH, model_name='mc_flat.pt')
+        if(args.task=='pat'):
+            RS_PATH = '/home/dan/DARo/config/'
+            export_policy_as_jit(ppo_runner.alg.actor_critic, RS_PATH, model_name='pat_flat.pt')
             print('#'*100)
             print('exported to {}'.format(RS_PATH))
             print('#'*100)
@@ -75,7 +75,7 @@ def play(args):
     robot_index = 1 # which robot is used for logging
     joint_index = 0 # which joint is used for logging
     leg_index = 0 #which leg is used for logging
-    stop_state_log = 100 # number of steps before plotting states
+    stop_state_log = 1000 # number of steps before plotting states
     stop_rew_log = env.max_episode_length + 1 # number of steps before print average episode rewards
     camera_position = np.array(env_cfg.viewer.pos, dtype=np.float64)
     # camera_vel = np.array([1., 1., 0.])
@@ -88,9 +88,9 @@ def play(args):
         obs, _, rews, dones, infos = env.step(actions.detach())
         if overide_rand_command:
             for r_idx in range(env_cfg.env.num_envs):
-                env.commands[r_idx, 0] = 1.0
+                env.commands[r_idx, 0] = 0.0
                 env.commands[r_idx, 1] = 0.0
-                env.commands[r_idx, 2] = 0.0
+                env.commands[r_idx, 2] = 0.5
                 # print(env.root_states[r_idx, :3])
 
         if RECORD_FRAMES:
@@ -124,7 +124,11 @@ def play(args):
                     'base_vel_y': env.base_lin_vel[robot_index, 1].item(),
                     'base_vel_z': env.base_lin_vel[robot_index, 2].item(),
                     'base_vel_yaw': env.base_ang_vel[robot_index, 2].item(),
-                    'contact_forces_z': env.contact_forces[robot_index, env.feet_indices, 2].cpu().numpy()
+                    'contact_forces_z': env.contact_forces[robot_index, env.feet_indices, 2].cpu().numpy(),
+                    'lf_pos': env._lf_position[robot_index, 2].cpu().numpy(),
+                    'rf_pos': env._rf_position[robot_index, 2].cpu().numpy(),
+                    'lf_pos_des': env._lf_position_des[robot_index, 2].cpu().numpy(),
+                    'rf_pos_des': env._rf_position_des[robot_index, 2].cpu().numpy()
                 }
             )
         elif i==stop_state_log:
@@ -138,8 +142,8 @@ def play(args):
             logger.print_rewards()
 
 if __name__ == '__main__':
-    EXPORT_POLICY = False
+    EXPORT_POLICY = True
     RECORD_FRAMES = False
-    MOVE_CAMERA = True
+    MOVE_CAMERA = False
     args = get_args()
     play(args)
