@@ -511,8 +511,36 @@ class PatInPlace(LeggedRobot):
         self._Fr[torch.logical_not(rl_stance_idx), 3:] = 0
         self._tau_stance = torch.bmm(self._Jc.transpose(1, 2), self._Fr)
 
-    def _inverse_kinematics():
-        
+    def _inverse_kinematics(foot_pos):
+
+        THIGH_LENGTH = 0.21
+        SHANK_LENGTH = 0.195
+    
+        R = torch.tensor([[0., 0., -1.], 
+                          [0., 1., 0.],
+                          [1., 0., 0.]])
+
+        cart_pos = torch.matmul(R, foot_pos)
+        cart_pos = [cart_pos[0]-0.001, cart_pos[1]-0.045, cart_pos[2]-0.382]
+        cart_pos = [0.0000001 if coord == 0 else coord for coord in cart_pos]
+
+        theta = torch.zeros(3)
+        print(cart_pos)
+        theta[0] = math.atan(cart_pos[1]/cart_pos[0])
+        theta[1] = -math.acos((cart_pos[0]**2 + cart_pos[1]**2 + cart_pos[2]**2-(THIGH_LENGTH**2)-(SHANK_LENGTH**2))/(2*THIGH_LENGTH*SHANK_LENGTH))
+        theta[2] = -math.asin(cart_pos[2]/r)-math.atan((SHANK_LENGTH*math.sin(theta[1]))/(THIGH_LENGTH+SHANK_LENGTH*math.cos(theta[1])))
+
+        return theta
+
+    def _ik_reference(phase):
+        if phase < self._gait_period/4:
+            t = phase*4/self._gait_period
+            p_l = torch.tensor([0, 0.05, 0.2*(-2*t**3+3*t**2)])
+        else :
+            t = phase*4/self._gait_period-1
+            p_l = torch.tensor([0, 0.05, 0.2*(2*t**3-3*t**2+1)])
+
+        return _inverse_kinematics(p_l)
 
     def _compute_torques(self, actions):
         """ Compute torques from actions.
@@ -532,13 +560,13 @@ class PatInPlace(LeggedRobot):
             torques = self.p_gains*(actions_scaled + self.default_dof_pos - self.dof_pos) - self.d_gains*self.dof_vel
         elif control_type=="STEP":
 
-            torques = 
+            torques = torch.tensor(
                 [if self._phase[i] < (self._gait_period/2)
-                 torch.cat([self.p_gains[i][:2]*(actions_scaled + _inverse_kinematics(self._phase[i]) - self.dof_pos[i][:2]) - self.d_gains[i][:2]*self.dof_vel[:2],
+                 torch.cat([self.p_gains[i][:2]*(actions_scaled + _ik_reference(self._phase[i]) - self.dof_pos[i][:2]) - self.d_gains[i][:2]*self.dof_vel[:2],
                  torch.zeros(3)])
                  else torch.cat([self.p_gains[i][:2]*(actions_scaled[i][:2] + self.default_dof_pos[i][:2] - self.dof_pos[i][:2]) - self.d_gains[:2]*self.dof_vel[:2],
                  torch.zeros(3)])
-                 for i in range(num_envs)]
+                 for i in range(num_envs)])
                  
         elif control_type=="V":
             torques = self.p_gains*(actions_scaled - self.dof_vel) - self.d_gains*(self.dof_vel - self.last_dof_vel)/self.sim_params.dt
@@ -731,6 +759,10 @@ class PatInPlace(LeggedRobot):
         # send timeout info to the algorithm
         if self.cfg.env.send_timeouts:
             self.extras["time_outs"] = self.time_out_buf
+
+    def _reward_foot_target(self):
+        return torch.cdist(self._lf_position_des, self._lf_position)
+
     def _reward_no_fly(self):
         contacts = self.contact_forces[:, self.feet_indices, 2] > 0.1
         single_contact = torch.sum(1.*contacts, dim=1)==1

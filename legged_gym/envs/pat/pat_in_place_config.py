@@ -112,38 +112,40 @@ class PatInPlaceCfg( LeggedRobotCfg ):
         # soft_torque_limit = 1.
         max_contact_force = 100. # forces above this value are penalized
         class scales( LeggedRobotCfg.rewards.scales ):
-            base_height = -20.0
+            base_height = 0.0
             #penalize pitch and roll
-            orientation = -10.0
+            orientation = 0.0
             #TVR Reward
             # foot_position = -20.0
             #stance foot velocity penality
-            foot_velocity = -1.0
+            foot_velocity = 0.0
             #swing foot GRF penality
-            GRF = -0.01
+            GRF = 0.0
 
-            foot_height_ref = -10
-            slip = -0.0003
-            joint_motion = -0.000001
-            target_smoothness = -0.003
-            linear_ortho_vel = 0.75
-            body_motion = 1.0
+            foot_height_ref = 0.0
+            slip = 0.0
+            joint_motion = 0.0
+            target_smoothness = 0.0
+            linear_ortho_vel = 0.0
+            body_motion = 0.0
 
             # feet_air_time =  1.0
             #
-            termination = -0.0
-            tracking_lin_vel = 1.0
-            tracking_ang_vel = 0.5
-            lin_vel_z = -2.0
-            ang_vel_xy = -0.05
-            torques = -0.00001
+            termination = 0.0
+            tracking_lin_vel = 0.0
+            tracking_ang_vel = 0.0
+            lin_vel_z = 0.0
+            ang_vel_xy = 0.0
+            torques = 0.0
             dof_vel = 0.0
             dof_acc = 0.0
-            collision = -5.
+            collision = 0.
             # feet_stumble = -0.0
             # #Penalize policy output change
-            action_rate = -0.0
-            stand_still = -0.0
+            action_rate = 0.0
+            stand_still = 0.0
+
+            foot_target = 1.0
 
 
 class PatInPlaceCfgPPO( LeggedRobotCfgPPO ):
