@@ -30,7 +30,7 @@
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 import math
-class PatCfg( LeggedRobotCfg ):
+class PatInPlaceCfg( LeggedRobotCfg ):
     class gait():
         swing_time = 0.33
     class foot_placement():
@@ -69,7 +69,7 @@ class PatCfg( LeggedRobotCfg ):
         measure_heights = False
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
-        control_type = 'P'
+        control_type = 'STEP'
         kpCartesian = 3000
         kdCartesian = 2.0
         stiffness = {'joint': 20.}  # [N*m/rad]
@@ -146,7 +146,7 @@ class PatCfg( LeggedRobotCfg ):
             stand_still = -0.0
 
 
-class PatCfgPPO( LeggedRobotCfgPPO ):
+class PatInPlaceCfgPPO( LeggedRobotCfgPPO ):
     class algorithm( LeggedRobotCfgPPO.algorithm ):
         entropy_coef = 0.01
     class runner( LeggedRobotCfgPPO.runner ):
