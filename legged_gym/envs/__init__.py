@@ -39,7 +39,8 @@ from .cassie.cassie import Cassie
 from .cassie.cassie_config import CassieRoughCfg, CassieRoughCfgPPO
 from .pat.pat import Pat
 from .pat.pat_config import PatCfg, PatCfgPPO
-from .pat.pat_stepping_config import PatSteppingCfg, PatSteppingCfgPPO
+from .pat.pat_in_place import PatInPlace
+from .pat.pat_in_place_config import PatInPlaceCfg, PatInPlaceCfgPPO
 
 
 import os
@@ -52,3 +53,6 @@ task_registry.register( "a1", LeggedRobot, A1RoughCfg(), A1RoughCfgPPO())
 task_registry.register( "pat", Pat, PatCfg(), PatCfgPPO() )
 task_registry.register( "pat_step", Pat, PatSteppingCfg(), PatSteppingCfgPPO() )
 task_registry.register( "cassie", Cassie, CassieRoughCfg(), CassieRoughCfgPPO() )
+
+
+task_registry.register( "pat_in_place", PatInPlace, PatInPlaceCfg(), PatInPlaceCfgPPO() )
