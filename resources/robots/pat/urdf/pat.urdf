@@ -22,7 +22,7 @@
     </inertial>
     <visual>
       <geometry>
-        <mesh filename="../meshes/torso.dae" scale="1 1 1"/>
+        <mesh filename="../meshes/body.dae" scale="1 1 1"/>
       </geometry>
       <origin rpy="0 0 0" xyz="0 0 0"/>
     </visual>
@@ -37,11 +37,11 @@
   <!--Right Leg-->
   <joint name="R_hip_joint" type="revolute">
     <axis xyz="1 0 0"/>
-    <origin rpy="0 0 0" xyz="0.0015 -0.045 -0.06827"/>
+    <origin rpy="0 0 0" xyz="-0.047 -0.045 -0.06827"/>
     <parent link="trunk"/>
     <child link="R_hip"/>
     <dynamics damping="0.01" friction="0.2"/>
-    <limit effort="17" lower="-0.8" upper="0.8" velocity="40"/>
+    <limit effort="9" lower="-0.8" upper="0.8" velocity="40"/>
   </joint>
   <link name="R_hip">
     <inertial>
@@ -64,7 +64,7 @@
     <parent link="R_hip"/>
     <child link="R_thigh"/>
     <dynamics damping="0.01" friction="0.2"/>
-    <limit effort="17" lower="-1.5" upper="1.5" velocity="40"/>
+    <limit effort="18" lower="-1.5" upper="1.5" velocity="25"/>
   </joint>
   <link name="R_thigh">
     <inertial>
@@ -94,7 +94,7 @@
     <parent link="R_thigh"/>
     <child link="R_calf"/>
     <dynamics damping="0.01" friction="0.2"/>
-    <limit effort="17" lower="-2.5" upper="1.5" velocity="40"/>
+    <limit effort="18" lower="-2.5" upper="1.5" velocity="25"/>
   </joint>
   <link name="R_calf">
     <inertial>
@@ -138,11 +138,11 @@
   <!--Left Leg-->
   <joint name="L_hip_joint" type="revolute">
     <axis xyz="1 0 0"/>
-    <origin rpy="0 0 0" xyz="0.0015 0.045 -0.06827"/>
+    <origin rpy="0 0 0" xyz="-0.047 0.045 -0.06827"/>
     <parent link="trunk"/>
     <child link="L_hip"/>
     <dynamics damping="0.01" friction="0.2"/>
-    <limit effort="17" lower="-0.8" upper="0.8" velocity="40"/>
+    <limit effort="9" lower="-0.8" upper="0.8" velocity="40"/>
   </joint>
   <link name="L_hip">
     <inertial>
@@ -165,7 +165,7 @@
     <parent link="L_hip"/>
     <child link="L_thigh"/>
     <dynamics damping="0.01" friction="0.2"/>
-    <limit effort="17" lower="-1.5" upper="1.5" velocity="40"/>
+    <limit effort="18" lower="-1.5" upper="1.5" velocity="25"/>
   </joint>
   <link name="L_thigh">
     <inertial>
@@ -194,7 +194,7 @@
     <parent link="L_thigh"/>
     <child link="L_calf"/>
     <dynamics damping="0.01" friction="0.2"/>
-    <limit effort="17" lower="-2.5" upper="1.5" velocity="40"/>
+    <limit effort="18" lower="-2.5" upper="1.5" velocity="25"/>
   </joint>
   <link name="L_calf">
     <inertial>

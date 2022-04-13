@@ -31,6 +31,75 @@ from pytorch3d.transforms import quaternion_to_matrix, so3_log_map
 from legged_gym.envs.pat.pat_config import PatCfg
 
 print(PatCfg.init_state.default_joint_angles)
+def ik2d(x, z, l1=0.2, l2=0.2):
+    q2 = np.arccos((x**2 + z**2 -l1**2-l2**2)/(2*l1*l2))
+    q1 = np.arctan(y/(x+1e-8)) - np.arctan((l2*np.sin(q2))/(l1+l2*np.cos(q2)))
+    if(q1>0):
+        q1 = q1-np.pi
+    return [q1, q2]
+def swing_ref3d_leg(phase,
+                device,
+                x_default=0.0,
+                y_default=0.0,
+                z_default = -0.35,
+                swing_height=0.05):
+
+    N = phase.shape[0]
+    ref_pos = torch.zeros((N, 3), device=device)
+    t = torch.zeros((N,), device=device)
+
+    up_idx = (phase < math.pi/2.0)
+    down_idx = torch.logical_and(~up_idx, phase < math.pi)
+    t[up_idx] = (2.0/math.pi)*phase[up_idx]
+    t[down_idx] = (2.0/math.pi)*phase[down_idx] - 1.0
+
+    ref_pos[:, 0] = x_default
+    ref_pos[:, 1] = y_default
+    ref_pos[:, 2] = z_default
+    ref_pos[up_idx, 2] += swing_height*(-2*torch.pow(t[up_idx], 3)
+                          + 3*torch.pow(t[up_idx], 2))
+    ref_pos[down_idx, 2] += swing_height*(2*torch.pow(t[down_idx], 3)
+                          - 3*torch.pow(t[down_idx], 2)+1)
+
+    q = ik3d(ref_pos)
+    q[:, 1] = -q[:, 1]
+    return q
+def swing_ref3d(phi,
+                device,
+                x_default=0.0,
+                y_default=0.0,
+                z_default = -0.35,
+                swing_height=0.05):
+
+    q_ref = to_torch(np.zeros((num_envs, 6), dtype=np.float32),
+                     device=device)
+
+    q_lf_Ref = swing_ref3d_leg(phi[:, 0],
+                    device,
+                    x_default = x_default,
+                    y_default = y_default,
+                    z_default = z_default,
+                    swing_height = swing_height)
+    q_rf_Ref = swing_ref3d_leg(phi[:, 1],
+                    device,
+                    x_default = x_default,
+                    y_default = -y_default,
+                    z_default = z_default,
+                    swing_height = swing_height)
+    q_ref[:, :3] = q_lf_Ref
+    q_ref[:, 3:] = q_rf_Ref
+    return q_ref
+def ik3d(ref_pos, l2=0.205, l3=0.1955):
+    a = l3
+    b = l2
+    c = ref_pos.norm(dim=1)
+    q = torch.zeros_like(ref_pos)
+    q[:, 0] = torch.atan(ref_pos[:, 1]/(ref_pos[:, 2]+1e-8))
+    q[:, 1] = torch.acos((b**2+ torch.pow(c, 2) - a**2)/(2*b*c))\
+        -torch.atan(ref_pos[:, 0]/ref_pos[:, 1:3].norm(dim=1))
+    q[:, 2] = math.pi - torch.acos((a**2 + b**2 - torch.pow(c, 2))/(2*a*b))
+    return q
+
 def cubicBezier(y0, yf, x):
     dim = y0.shape[1]
     yDiff = (yf - y0).view(-1, dim, 1)
@@ -627,7 +696,7 @@ def _track_ik_controller():
 
     h_lh_to_lf = torch.bmm(w_R_h.transpose(1,2), lh_to_lf.view(-1, 3, 1))
     a_la_to_lf = torch.bmm(w_R_a.transpose(1,2), labd_to_lf.view(-1, 3, 1))
-    w_la_to_lf = torch.bmm(w_R_a.transpose(1,2), labd_to_lf.view(-1, 3, 1))    
+    w_la_to_lf = torch.bmm(w_R_a.transpose(1,2), labd_to_lf.view(-1, 3, 1))
     a_la_to_lf[:, 0] += 0.06
     b = torch.norm(h_lh_to_lf[0])
     a = 0.015
@@ -653,6 +722,20 @@ def _track_ik_controller():
     #
     # print("p: {} d: {}".format(h_p_lf[0], torch.norm(h_p_lf[0])))
     # print(_ik(_lthigh_position, _lf_position)[0, :])
+def fake_ik(phi, default_dof_pos, device, amp=0.2):
+    N, _ = phi.shape
+    q_ref = to_torch(np.zeros((N, 6), dtype=np.float32), device=device)
+    q_ref[:, ] = default_dof_pos
+
+    lf_swing_idx = torch.logical_and(phi>=0.0, phi<= math.pi)[:, 0]
+    rf_swing_idx = torch.logical_and(phi>=0.0, phi<= math.pi)[:, 1]
+    #swing
+    # q_ref[lf_swing_idx, 1] = 0.0 #2*amp*torch.sin(phi[lf_swing_idx, 0])#hip
+    # q_ref[lf_swing_idx, 2] = 0.0 #-2*amp*torch.sin(phi[lf_swing_idx, 0])#knee
+    q_ref[rf_swing_idx, 4] = amp*torch.sin(phi[rf_swing_idx, 1])#hip
+    q_ref[rf_swing_idx, 5] = amp*torch.sin(phi[rf_swing_idx, 1])#knee
+
+    return q_ref
 
 def _debug_viz():
     global _lf_pf_des, _lf_position
@@ -755,7 +838,7 @@ asset_root = "../../resources/robots/"
 pat_asset_file = "pat/urdf/pat.urdf"
 asset_options = gymapi.AssetOptions()
 asset_options.armature = 0.01
-asset_options.fix_base_link = PatCfg.asset.fix_base_link
+asset_options.fix_base_link = True
 asset_options.disable_gravity = False
 asset_options.flip_visual_attachments = True
 asset_options.collapse_fixed_joints = True
@@ -855,7 +938,7 @@ for i in range(num_envs):
     gym.set_actor_dof_properties(env, pat_handle, pat_dof_props)
 
     # set initial dof states
-    gym.set_actor_dof_states(env, pat_handle, default_dof_state, gymapi.STATE_ALL)
+    # gym.set_actor_dof_states(env, pat_handle, default_dof_state, gymapi.STATE_ALL)
 
     # set initial position targets
     gym.set_actor_dof_position_targets(env, pat_handle, default_dof_pos)
@@ -876,23 +959,23 @@ for i in range(num_envs):
     rabd_idx = gym.find_actor_rigid_body_index(env, pat_handle, "R_hip", gymapi.DOMAIN_SIM)
     rabd_idxs.append(rabd_idx)
 
-    lf_des_sphere = gym.create_sphere(sim, 0.02, None)
-    lf_des_sphere_handle = gym.create_actor(env, lf_des_sphere, lf_des_pose, "lf_des", i, 0)
-    gym.set_rigid_body_color(env, lf_des_sphere_handle, 0, gymapi.MESH_NONE, gymapi.Vec3(0.0, 0.5, 0.0))
-    lf_sphere_handles.append(lf_des_sphere_handle)
-    #no collision with foot
-    props = gym.get_actor_rigid_shape_properties(envs[i], lf_sphere_handles[i])
-    props[0].filter = 2 # 2 && 2 == 1 !=0 mask collision with foot
-    gym.set_actor_rigid_shape_properties(envs[i], lf_sphere_handles[i], props)
-
-    rf_des_sphere = gym.create_sphere(sim, 0.02, None)
-    rf_des_sphere_handle = gym.create_actor(env, rf_des_sphere, rf_des_pose, "rf_des", i, 0)
-    gym.set_rigid_body_color(env, rf_des_sphere_handle, 0, gymapi.MESH_NONE, gymapi.Vec3(0.0, 0.0, 0.5))
-    rf_sphere_handles.append(rf_des_sphere_handle)
-    #no collision with foot
-    props = gym.get_actor_rigid_shape_properties(envs[i], rf_des_sphere_handle)
-    props[0].filter = 2 # 2 && 2 == 1 !=0 mask collision with foot
-    gym.set_actor_rigid_shape_properties(envs[i], rf_des_sphere_handle, props)
+    # lf_des_sphere = gym.create_sphere(sim, 0.02, None)
+    # lf_des_sphere_handle = gym.create_actor(env, lf_des_sphere, lf_des_pose, "lf_des", i, 0)
+    # gym.set_rigid_body_color(env, lf_des_sphere_handle, 0, gymapi.MESH_NONE, gymapi.Vec3(0.0, 0.5, 0.0))
+    # lf_sphere_handles.append(lf_des_sphere_handle)
+    # #no collision with foot
+    # props = gym.get_actor_rigid_shape_properties(envs[i], lf_sphere_handles[i])
+    # props[0].filter = 2 # 2 && 2 == 1 !=0 mask collision with foot
+    # gym.set_actor_rigid_shape_properties(envs[i], lf_sphere_handles[i], props)
+    #
+    # rf_des_sphere = gym.create_sphere(sim, 0.02, None)
+    # rf_des_sphere_handle = gym.create_actor(env, rf_des_sphere, rf_des_pose, "rf_des", i, 0)
+    # gym.set_rigid_body_color(env, rf_des_sphere_handle, 0, gymapi.MESH_NONE, gymapi.Vec3(0.0, 0.0, 0.5))
+    # rf_sphere_handles.append(rf_des_sphere_handle)
+    # #no collision with foot
+    # props = gym.get_actor_rigid_shape_properties(envs[i], rf_des_sphere_handle)
+    # props[0].filter = 2 # 2 && 2 == 1 !=0 mask collision with foot
+    # gym.set_actor_rigid_shape_properties(envs[i], rf_des_sphere_handle, props)
 
 # _init_root_state_tensor = to_torch(np.zeros((num_envs, 13)), device=device)
 # _init_root_state_tensor[:, 2] = 0.44
@@ -997,6 +1080,7 @@ _lf_acc_des = to_torch(np.zeros((num_envs, 3), dtype=np.float32), device=device)
 _rf_position_des = to_torch(np.zeros((num_envs, 3), dtype=np.float32), device=device)
 _rf_vel_des = to_torch(np.zeros((num_envs, 3), dtype=np.float32), device=device)
 _rf_acc_des = to_torch(np.zeros((num_envs, 3), dtype=np.float32), device=device)
+_q_ref = to_torch(np.zeros((num_envs, 6), dtype=np.float32), device=device)
 
 
 _R = to_torch(np.zeros((num_envs, 3, 3), dtype=np.float32), device=device)
@@ -1098,14 +1182,40 @@ while step_count < 100 and not gym.query_viewer_has_closed(viewer):
     _rthigh_position = rb_states[rthigh_idxs, :3]
 
     _update_gait_info()
-    _compute_com()
-    _donghyun_fp()
-    # _update_foot_placement()
-    _compute_swing_trajectory()
-    _build_contact_jacobian()
-    _swing_impedence_control()
-    _stance_jt_control()
-    _track_ik_controller()
+    phi = torch.zeros_like(_swing_phases)
+    phi[:, 0] = _phase[:, 0]*2*math.pi
+    phi[:, 1] = phi[:, 0] + math.pi
+    phi = torch.fmod(phi, 2*math.pi)
+    # phi[:] = 0.0
+
+    # q_ref = fake_ik(phi, default_dof_pos_tensor, device)
+    # q_lf_Ref = swing_ref3d(phi[:, 0],
+    #                 device,
+    #                 x_default=0.0,
+    #                 y_default=0.06,
+    #                 z_default = -0.38,
+    #                 swing_height=0.05)
+    q_ref = swing_ref3d(phi,
+                    device,
+                    x_default=0.045,
+                    y_default=0.1,
+                    z_default = -0.38,
+                    swing_height=0.05)
+    # q_ref[:, :3] = q_lf_Ref
+    # q_ref[:, 3:] = q_rf_Ref
+
+    _tau = 100.*(q_ref.view(num_envs, 6, 1) - _dof_pos)  - 2.0*_dof_vel
+    gym.set_dof_actuation_force_tensor(sim, gymtorch.unwrap_tensor(_tau))
+    print("l_hip_pos_w: ", rb_states[labd_idxs[0], :3])
+    print("r_hip_pos_w: ", rb_states[rabd_idxs[0], :3])
+    # _compute_com()
+    # _donghyun_fp()
+    # # _update_foot_placement()
+    # _compute_swing_trajectory()
+    # _build_contact_jacobian()
+    # _swing_impedence_control()
+    # _stance_jt_control()
+    # _track_ik_controller()
     # lf_hist.append(_lf_position[0, 2].numpy())
     #
     # sim_count += 1
@@ -1122,10 +1232,10 @@ while step_count < 100 and not gym.query_viewer_has_closed(viewer):
     # _compute_torque_command()
     # _debug_viz()
     # print(_tau_swing[0, 2], _tau_stance[0, 2])
-    if asset_options.fix_base_link:
-        _tau  = _tau_swing + _tau_stance
-    else:
-        _tau  = (_tau_swing + _tau_stance)[:, 6:, :].contiguous()
+    # if asset_options.fix_base_link:
+    #     _tau  = _tau_swing + _tau_stance
+    # else:
+    #     _tau  = (_tau_swing + _tau_stance)[:, 6:, :].contiguous()
     # _tau  = (_tau_swing + _tau_stance)
     # if sim_count < 1000:
     #     # set forces and force positions for ant root bodies (first body in each env)
@@ -1136,50 +1246,50 @@ while step_count < 100 and not gym.query_viewer_has_closed(viewer):
     #     force_positions[:, 0, 2] += 0.0
     #     gym.apply_rigid_body_force_at_pos_tensors(sim, gymtorch.unwrap_tensor(forces), gymtorch.unwrap_tensor(force_positions), gymapi.ENV_SPACE)
         # print("iter [{}] applying [{}] Nm of force".format(sim_count, forces[0, 0, 2]))
-    verts = np.zeros((4, 3), dtype=np.float32)
-    colors = np.zeros((6, 1), dtype=np.float32)
-    colors[1] = 0.5
-    colors[5] = 0.5
-    for i in range(num_envs):
-        state = gym.get_actor_rigid_body_states(envs[i], lf_sphere_handles[i], gymapi.STATE_NONE)
-        state['pose']['p'].fill((_lf_position_des[i, 0], _lf_position_des[i, 1], _lf_position_des[i, 2]))
-        state['pose']['r'].fill((0, 0, 0, 1))
-        state['vel']['linear'].fill((0, 0, 0))
-        state['vel']['angular'].fill((0, 0, 0))
-        gym.set_actor_rigid_body_states(envs[i], lf_sphere_handles[i], state, gymapi.STATE_ALL)
-        state = gym.get_actor_rigid_body_states(envs[i], rf_sphere_handles[i], gymapi.STATE_NONE)
-        state['pose']['p'].fill((_rf_position_des[i, 0], _rf_position_des[i, 1], _rf_position_des[i, 2]))
-        state['pose']['r'].fill((0, 0, 0, 1))
-        state['vel']['linear'].fill((0, 0, 0))
-        state['vel']['angular'].fill((0, 0, 0))
-        gym.set_actor_rigid_body_states(envs[i], rf_sphere_handles[i], state, gymapi.STATE_ALL)
-        #draw reaction force
-        gym.draw_env_rigid_contacts(viewer, envs[i], gymapi.Vec3(255, 0.0, 0.0), rf_scale, False)
-        verts[0, :] = _lf_position[i, :].view(-1)
-        verts[1, :] = rf_scale*_Fr[i, :3].view(-1)
-        verts[2, :] = _rf_position[i, :].view(-1)
-        verts[3, :] = rf_scale*_Fr[i, 3:].view(-1)
-
-        gym.add_lines(viewer, envs[i], 2, verts, colors)
-    gym.set_dof_actuation_force_tensor(sim, gymtorch.unwrap_tensor(_tau))
+    # gym.set_dof_actuation_force_tensor(sim, gymtorch.unwrap_tensor(_tau))
+    # verts = np.zeros((4, 3), dtype=np.float32)
+    # colors = np.zeros((6, 1), dtype=np.float32)
+    # colors[1] = 0.5
+    # colors[5] = 0.5
+    # for i in range(num_envs):
+    #     state = gym.get_actor_rigid_body_states(envs[i], lf_sphere_handles[i], gymapi.STATE_NONE)
+    #     state['pose']['p'].fill((_lf_position_des[i, 0], _lf_position_des[i, 1], _lf_position_des[i, 2]))
+    #     state['pose']['r'].fill((0, 0, 0, 1))
+    #     state['vel']['linear'].fill((0, 0, 0))
+    #     state['vel']['angular'].fill((0, 0, 0))
+    #     gym.set_actor_rigid_body_states(envs[i], lf_sphere_handles[i], state, gymapi.STATE_ALL)
+    #     state = gym.get_actor_rigid_body_states(envs[i], rf_sphere_handles[i], gymapi.STATE_NONE)
+    #     state['pose']['p'].fill((_rf_position_des[i, 0], _rf_position_des[i, 1], _rf_position_des[i, 2]))
+    #     state['pose']['r'].fill((0, 0, 0, 1))
+    #     state['vel']['linear'].fill((0, 0, 0))
+    #     state['vel']['angular'].fill((0, 0, 0))
+    #     gym.set_actor_rigid_body_states(envs[i], rf_sphere_handles[i], state, gymapi.STATE_ALL)
+    #     #draw reaction force
+    #     gym.draw_env_rigid_contacts(viewer, envs[i], gymapi.Vec3(255, 0.0, 0.0), rf_scale, False)
+    #     verts[0, :] = _lf_position[i, :].view(-1)
+    #     verts[1, :] = rf_scale*_Fr[i, :3].view(-1)
+    #     verts[2, :] = _rf_position[i, :].view(-1)
+    #     verts[3, :] = rf_scale*_Fr[i, 3:].view(-1)
+    #
+    #     gym.add_lines(viewer, envs[i], 2, verts, colors)
 
     # update viewer
     gym.step_graphics(sim)
     gym.draw_viewer(viewer, sim, False)
     gym.sync_frame_time(sim)
-    gym.clear_lines(viewer)
-    if log_data:
-        logger['_lf_position'].append(_lf_position[0, :].view(-1).clone().numpy())
-        logger['_rf_position'].append(_rf_position[0, :].view(-1).clone().numpy())
-        logger['_lf_position_des'].append(_lf_position_des[0, :].view(-1).clone().numpy())
-        logger['_rf_position_des'].append(_rf_position_des[0, :].view(-1).clone().numpy())
-        logger['_swing_states'].append(_swing_states[0, :].view(-1).clone().numpy())
-        logger['_Fr'].append(_Fr[0, :].view(-1).clone().numpy())
-        logger['_com_position'].append(_com_position[0, :].view(-1).clone().numpy())
-        logger['_com_vel'].append(_com_vel[0, :].view(-1).clone().numpy())
-        logger['_phase'].append(_phase[0].clone().numpy())
-        logger['_t_stamp'].append(step_count*sim_params.dt)
-        step_count +=1
+    # gym.clear_lines(viewer)
+    # if log_data:
+    #     logger['_lf_position'].append(_lf_position[0, :].view(-1).clone().numpy())
+    #     logger['_rf_position'].append(_rf_position[0, :].view(-1).clone().numpy())
+    #     logger['_lf_position_des'].append(_lf_position_des[0, :].view(-1).clone().numpy())
+    #     logger['_rf_position_des'].append(_rf_position_des[0, :].view(-1).clone().numpy())
+    #     logger['_swing_states'].append(_swing_states[0, :].view(-1).clone().numpy())
+    #     logger['_Fr'].append(_Fr[0, :].view(-1).clone().numpy())
+    #     logger['_com_position'].append(_com_position[0, :].view(-1).clone().numpy())
+    #     logger['_com_vel'].append(_com_vel[0, :].view(-1).clone().numpy())
+    #     logger['_phase'].append(_phase[0].clone().numpy())
+    #     logger['_t_stamp'].append(step_count*sim_params.dt)
+    #     step_count +=1
     # time.sleep(1.0)
 if log_data:
     import pickle

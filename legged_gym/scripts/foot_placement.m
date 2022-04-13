@@ -1,7 +1,7 @@
 clear; 
 clc;
 h = 0.40;
-T = 0.33;
+T = 0.24;
 p = [0.866279, -0.629717];
 [A, B, K, kappa, tprime] = get_ABK(h, T, p);
 
@@ -21,7 +21,7 @@ function [A, B, K, kappa, tprime] = get_ABK(h, T, p)
     C = eye(2);
     D = [0;0];
     K = place(A, -B, p);
-    close_eigen = eig(A+B*K);
+    close_eigen = eig(A+B*K)
     kappa = K(1)-1;
     tprime = acoth(K(2)*omega)/omega;
 end

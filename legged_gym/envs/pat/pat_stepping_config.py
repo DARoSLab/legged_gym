@@ -69,7 +69,7 @@ class PatSteppingCfg( LeggedRobotCfg ):
         measure_heights = False
     class control( LeggedRobotCfg.control ):
         # PD Drive parameters:
-        control_type = 'TA'
+        control_type = 'IK'
         kpCartesian = 3000
         kdCartesian = 2.0
         stiffness = {'joint': 20.}  # [N*m/rad]
@@ -112,38 +112,33 @@ class PatSteppingCfg( LeggedRobotCfg ):
         # soft_torque_limit = 1.
         max_contact_force = 100. # forces above this value are penalized
         class scales( LeggedRobotCfg.rewards.scales ):
-            base_height = -20.0
+            base_height = 0.0
             #penalize pitch and roll
             orientation = 0.0
             #TVR Reward
-            # foot_position = -20.0
+            foot_position = 0.0
             #stance foot velocity penality
             foot_velocity = 0.0
             #swing foot GRF penality
             GRF = -0.0
-
-            foot_height_ref = -5e3
+            foot_height_ref = 0.0
             slip = -0.0
-            joint_motion = -0.000001
-            target_smoothness = -0.003
+            joint_motion = -0.0
+            target_smoothness = -0.00
             linear_ortho_vel = 0.0
             body_motion = 0.0
-
-            # feet_air_time =  1.0
-            #
             termination = -0.0
-            tracking_lin_vel = 2.0
+            tracking_lin_vel = 0.0
             tracking_ang_vel = 0.0
             lin_vel_z = -0.0
             ang_vel_xy = -0.0
             torques = -0.00001
             dof_vel = 0.0
             dof_acc = 0.0
-            collision = -5.
-            # feet_stumble = -0.0
-            # #Penalize policy output change
+            collision = 0.0
             action_rate = -0.0
             stand_still = -0.0
+
 
 
 class PatSteppingCfgPPO( LeggedRobotCfgPPO ):

@@ -38,8 +38,12 @@ from .anymal_b.anymal_b_config import AnymalBRoughCfg, AnymalBRoughCfgPPO
 from .cassie.cassie import Cassie
 from .cassie.cassie_config import CassieRoughCfg, CassieRoughCfgPPO
 from .pat.pat import Pat
+from .pat.pat_ik import PatIK
+
 from .pat.pat_config import PatCfg, PatCfgPPO
 from .pat.pat_stepping_config import PatSteppingCfg, PatSteppingCfgPPO
+from .pat.pat_rough_config import PatRoughCfg, PatRoughCfgPPO
+from .pat.pat_IK_config import PatIKCfg, PatIKCfgPPO
 
 
 import os
@@ -47,8 +51,12 @@ import os
 from legged_gym.utils.task_registry import task_registry
 
 task_registry.register( "anymal_c_rough", Anymal, AnymalCRoughCfg(), AnymalCRoughCfgPPO() )
+task_registry.register( "anymal_c_flat", Anymal, AnymalCFlatCfg(), AnymalCFlatCfgPPO() )
 task_registry.register( "anymal_b", Anymal, AnymalBRoughCfg(), AnymalBRoughCfgPPO() )
 task_registry.register( "a1", LeggedRobot, A1RoughCfg(), A1RoughCfgPPO())
 task_registry.register( "pat", Pat, PatCfg(), PatCfgPPO() )
 task_registry.register( "pat_step", Pat, PatSteppingCfg(), PatSteppingCfgPPO() )
+task_registry.register( "pat_rough", Pat, PatRoughCfg(), PatRoughCfgPPO() )
+task_registry.register( "pat_IK", Pat, PatIKCfg(), PatIKCfgPPO() )
+task_registry.register( "pat_pd", PatIK, PatIKCfg(), PatIKCfgPPO() )
 task_registry.register( "cassie", Cassie, CassieRoughCfg(), CassieRoughCfgPPO() )

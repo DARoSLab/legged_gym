@@ -31,6 +31,10 @@
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
 import math
 class PatCfg( LeggedRobotCfg ):
+    class experiment:
+        recompute_normalization = False
+        experiment_name = "pat"
+        n_sample_mean_est = 1000
     class gait():
         swing_time = 0.33
     class foot_placement():
@@ -52,12 +56,11 @@ class PatCfg( LeggedRobotCfg ):
 
         default_joint_angles = { # = target angles [rad] when action = 0.0
             'L_hip_joint': -0.16,   # [rad]
-            'R_hip_joint': 0.3,   # [rad]
-
             'L_thigh_joint': 0.55,    # [rad]
-            'R_thigh_joint': 0.55,     # [rad]
-
             'L_calf_joint': -0.95,     # [rad]
+
+            'R_hip_joint': 0.3,   # [rad]
+            'R_thigh_joint': 0.55,     # [rad]
             'R_calf_joint': -0.95,    # [rad]
         }
 
@@ -72,13 +75,13 @@ class PatCfg( LeggedRobotCfg ):
         control_type = 'TA'
         kpCartesian = 3000
         kdCartesian = 2.0
-        stiffness = {'joint': 20.}  # [N*m/rad]
-        damping = {'joint': 0.5}     # [N*m*s/rad]
+        stiffness = {'joint': 17.}  # [N*m/rad]
+        damping = {'joint': 0.4}     # [N*m*s/rad]
         # action scale: target angle = actionScale * action + defaultAngle
         # action_scale = 10
         action_scale = 0.25
         # decimation: Number of control action updates @ sim DT per policy DT
-        decimation = 4
+        decimation = 2
     class commands(LeggedRobotCfg.commands):
         heading_command = False # if true: compute ang vel command from heading error
         class ranges(LeggedRobotCfg.commands.ranges):
@@ -92,7 +95,7 @@ class PatCfg( LeggedRobotCfg ):
         terminate_after_contacts_on = ["base"]
         self_collisions = 0 # 1 to disable, 0 to enable...bitwise filter
         flip_visual_attachments = True
-        fix_base_link = False
+        fix_base_link = True
         # collapse_fixed_joints = False
     class domain_rand:
         randomize_friction = True

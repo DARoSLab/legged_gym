@@ -41,7 +41,7 @@ from typing import Tuple, Dict
 from legged_gym.envs import LeggedRobot
 from legged_gym import LEGGED_GYM_ROOT_DIR, envs
 from legged_gym.envs.pat.pat_utils import *
-
+from legged_gym.utils.pat_terrain import PatTerrain
 class Pat(LeggedRobot):
     def _custom_init(self, cfg):
 
@@ -68,6 +68,9 @@ class Pat(LeggedRobot):
         self._lf_position = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
         self._rf_position = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
 
+        self._lf_q_ref = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
+        self._rf_q_ref = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
+
         #POLICY NETWORK OUTPUT
         self._Fr = to_torch(np.zeros((self.num_envs, 6, 1), dtype=np.float32), device=self.device)
         self._lf_pf_des = to_torch(np.zeros((self.num_envs, 3), dtype=np.float32), device=self.device)
@@ -76,6 +79,10 @@ class Pat(LeggedRobot):
         #GAIT PARAMETERS
         self._t = to_torch(np.zeros((self.num_envs, 1), dtype=np.float32), device=self.device)
         self._phase = to_torch(np.zeros((self.num_envs, 1), dtype=np.float32), device=self.device)
+        self._phases = to_torch(np.zeros((self.num_envs, 2), dtype=np.float32), device=self.device)
+        self._base_phase = to_torch(np.zeros((self.num_envs, 1), dtype=np.float32), device=self.device)
+        self._delta_phases = to_torch(np.zeros((self.num_envs, 2), dtype=np.float32), device=self.device)
+
         self._swing_phases = to_torch(np.zeros((self.num_envs, 2), dtype=np.float32), device=self.device)
         self._swing_states = to_torch(np.zeros((self.num_envs, 2), dtype=np.float32), device=self.device)
         self._prev_swing_states = to_torch(np.zeros((self.num_envs, 2), dtype=np.float32), device=self.device)
@@ -85,10 +92,41 @@ class Pat(LeggedRobot):
         self._tau_stance = to_torch(np.zeros((self.num_envs, 6, 1), dtype=np.float32), device=self.device)
         self._swing_time = cfg.gait.swing_time
         self._swing_height = cfg.foot_placement.swing_height
-        self._gait_period = 3*self._swing_time #double stance and two single stances
+        self._gait_period = 2*self._swing_time #two single stances
         self._hight_des = to_torch(np.zeros((self.num_envs, 1), dtype=np.float32), device=self.device)
         self._hight_des[:] = cfg.foot_placement.hight_des
 
+
+        self._historyLength = 6
+        self._nJoints = 6
+        self._jointPosErrorHist = to_torch(np.zeros((self.num_envs, self._historyLength*self._nJoints), dtype=np.float32), device=self.device)
+        self._jointVelHist = to_torch(np.zeros((self.num_envs, self._historyLength*self._nJoints), dtype=np.float32), device=self.device)
+        self._historyTempMem = to_torch(np.zeros((self.num_envs, self._historyLength*self._nJoints), dtype=np.float32), device=self.device)
+        self._previousAction = to_torch(np.zeros((self.num_envs, self._nJoints), dtype=np.float32), device=self.device)
+        self._prepreviousAction = to_torch(np.zeros((self.num_envs, self._nJoints), dtype=np.float32), device=self.device)
+        self._foot_pos = to_torch(np.zeros((self.num_envs, self._nJoints), dtype=np.float32), device=self.device)
+        self._joint_target = to_torch(np.zeros((self.num_envs, self._nJoints, 1), dtype=np.float32), device=self.device)
+        self._joint_target[:, :, 0] = self.default_dof_pos[:]
+        self.obs_buf_mean_cummulative = to_torch(np.zeros((1, 76), dtype=np.float32), device=self.device)
+        self.obs_buf_var_cummulative = to_torch(np.zeros((1, 76), dtype=np.float32), device=self.device)
+        mean_var_path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', self.cfg.experiment.experiment_name + "_mean_var")
+        if not os.path.exists(mean_var_path):
+            os.makedirs(mean_var_path)
+        self.mean_path = os.path.join(mean_var_path, 'mean.pt')
+        self.var_path = os.path.join(mean_var_path, 'var.pt')
+        print(self.mean_path, self.var_path)
+        self.enable_mean_var_est = self.cfg.experiment.recompute_normalization or \
+                                    not(os.path.exists(self.mean_path) and os.path.exists(self.var_path))
+        if not self.enable_mean_var_est:
+            self.obs_buf_mean_cummulative = torch.load(self.mean_path).to(self.device)
+            self.obs_buf_var_cummulative = torch.load(self.var_path).to(self.device)
+            print("Loading Precomputed mean and var ...")
+        else:
+            print("Computing new mean and var ...")
+
+
+        self._last_dof_pos = to_torch(np.zeros((self.num_envs, 2*3), dtype=np.float32), device=self.device)
+        self._q_ref = to_torch(np.zeros((self.num_envs, 2*3), dtype=np.float32), device=self.device)
         self.start_planning = None
         self.planning_done = None
         # Prepare jacobian tensor
@@ -117,9 +155,13 @@ class Pat(LeggedRobot):
 
         #sampling time randomization
         self._sampling_time = 0.005
-
+        self._iter = 0
         self.last_last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
-
+        # if self.cfg.asset.fix_base_link:
+        #     print("Error Fix Base enabled")
+        #     quit()
+    def _initialize_obs(self):
+        self._jointPosErrorHist[:, ]
     def _create_envs(self):
         """ Creates environments:
              1. loads the robot URDF/MJCF asset,
@@ -180,13 +222,16 @@ class Pat(LeggedRobot):
         self.trunk_idxs = []
         self.lthigh_idxs = []
         self.rthigh_idxs = []
+        self.lhip_idxs = []
+        self.rhip_idxs = []
         self.lf_idxs = []
         self.rf_idxs = []
         for i in range(self.num_envs):
             # create env instance
             env_handle = self.gym.create_env(self.sim, env_lower, env_upper, int(np.sqrt(self.num_envs)))
             pos = self.env_origins[i].clone()
-
+            if i == 0:
+                print("env_origins: ", self.env_origins[i])
             # pos[:2] += torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
             start_pose.p = gymapi.Vec3(*pos)
             # start_pose.p = gymapi.Vec3(*self.cfg.init_state.pos)
@@ -212,6 +257,10 @@ class Pat(LeggedRobot):
             self.lthigh_idxs.append(lthigh_idx)
             rthigh_idx = self.gym.find_actor_rigid_body_index(env_handle, anymal_handle, "R_thigh", gymapi.DOMAIN_SIM)
             self.rthigh_idxs.append(rthigh_idx)
+            lhip_idx = self.gym.find_actor_rigid_body_index(env_handle, anymal_handle, "L_hip", gymapi.DOMAIN_SIM)
+            self.lhip_idxs.append(lhip_idx)
+            rhip_idx = self.gym.find_actor_rigid_body_index(env_handle, anymal_handle, "R_hip", gymapi.DOMAIN_SIM)
+            self.rhip_idxs.append(rhip_idx)
         # Contact Jacobian entries
         self.LF_index = self.gym.get_asset_rigid_body_dict(robot_asset)["L_foot"]
         self.RF_index = self.gym.get_asset_rigid_body_dict(robot_asset)["R_foot"]
@@ -232,6 +281,25 @@ class Pat(LeggedRobot):
 
         self._rb_properties = self.gym.get_actor_rigid_body_properties(self.envs[0], 0)
         self._rb_masses = to_torch(np.array([getattr(self._rb_properties[i], 'mass') for i in range(self.num_bodies)], dtype=np.float32), device=self.device)
+
+    def create_sim(self):
+        """ Creates simulation, terrain and evironments
+        """
+        self.up_axis_idx = 2 # 2 for z, 1 for y -> adapt gravity accordingly
+        self.sim = self.gym.create_sim(self.sim_device_id, self.graphics_device_id, self.physics_engine, self.sim_params)
+        mesh_type = self.cfg.terrain.mesh_type
+        if mesh_type in ['heightfield', 'trimesh']:
+            self.terrain = PatTerrain(self.cfg.terrain, self.num_envs)
+        if mesh_type=='plane':
+            self._create_ground_plane()
+        elif mesh_type=='heightfield':
+            self._create_heightfield()
+        elif mesh_type=='trimesh':
+            self._create_trimesh()
+        elif mesh_type is not None:
+            raise ValueError("Terrain mesh type not recognised. Allowed types are [None, plane, heightfield, trimesh]")
+        self._create_envs()
+
     def compute_observations(self):
         """ Computes observations
         """
@@ -247,8 +315,8 @@ class Pat(LeggedRobot):
                                     self.dof_vel,# 6
                                     self.actions,# 6
                                     self._phase, # 1
-                                    torch.sin(self._phase),#1
-                                    torch.cos(self._phase)#1
+                                    torch.sin(2*math.pi*self._phase),#1
+                                    torch.cos(2*math.pi*self._phase)#1
                                     ),dim=-1) # 38
         # add perceptive inputs if not blind
         if self.cfg.terrain.measure_heights:
@@ -268,6 +336,7 @@ class Pat(LeggedRobot):
 
         self._t = torch.fmod(self._t + self.sim_params.dt, self._gait_period)
         self._phase = self._t/self._gait_period
+
 
         # _dstance_idx = (self._phase<(1./3)).squeeze() # double stance
         # _sstance_l_idx = torch.logical_and(torch.logical_not(_dstance_idx), (self._phase<(2./3)).squeeze()) #single stance left foot stance
@@ -428,7 +497,7 @@ class Pat(LeggedRobot):
         self._rf_pf_des[:, 2] = 0
         self._rf_pf_des[:, 1] -= self.cfg.foot_placement.thigh_offset
     def _update_foot_placement(self):
-        self.gym.refresh_rigid_body_state_tensor(self.sim)
+
         if self.cfg.foot_placement.fp_type=='CP':
             self._capture_point_fp()
         else:
@@ -526,6 +595,19 @@ class Pat(LeggedRobot):
             torques = self.p_gains*(actions_scaled - self.dof_vel) - self.d_gains*(self.dof_vel - self.last_dof_vel)/self.sim_params.dt
         elif control_type=="T":
             torques = actions_scaled
+        elif control_type == "IK":
+            phi = torch.zeros_like(self._swing_phases)
+            phi[:, 0] = self._phase[:, 0]*2*math.pi
+            phi[:, 1] = phi[:, 0] + math.pi
+            phi = torch.fmod(phi, 2*math.pi)
+            q_ref = swing_ref3d(phi,
+                            self.device,
+                            x_default=self.cfg.foot_placement.x_default,
+                            y_default=self.cfg.foot_placement.y_default,
+                            z_default = self.cfg.foot_placement.z_default,
+                            swing_height=self.cfg.foot_placement.swing_height)
+            # print("q_ref: ", q_ref[0, :])
+            torques = self.p_gains*(actions_scaled + q_ref - self.dof_pos) - self.d_gains*self.dof_vel
         elif control_type == "TA":
             torques = self._compute_actual_torques(actions_scaled)
         elif control_type == "J": #jacobian transpose
@@ -568,6 +650,29 @@ class Pat(LeggedRobot):
         tauAct = torch.clip(tauActMotor, -self.torque_limits, self.torque_limits)*_gr;
         tauAct = tauAct - _jointDamping * torch.sign(self.dof_vel) - _jointDryFriction * torch.sign(self.dof_vel);
         return tauAct
+
+    def _fake_ik(self):
+
+        #swing
+        lf_swing_idx = torch.logical_and(phi>=0.0, phi<= math.pi)[:, 0]
+        rf_swing_idx = torch.logical_and(phi>=0.0, phi<= math.pi)[:, 1]
+
+        self._q_ref[lf_swing_idx, 0] = self.default_dof_pos[0]#abd
+        self._q_ref[lf_swing_idx, 1] = torch.sin(phi[lf_swing_idx])#hip
+        self._q_ref[lf_swing_idx, 2] = torch.sin(phi[lf_swing_idx])#knee
+        self._q_ref[rf_swing_idx, 3] = self.default_dof_pos[3]#abd
+        self._q_ref[rf_swing_idx, 4] = torch.sin(phi[rf_swing_idx])#hip
+        self._q_ref[rf_swing_idx, 5] = torch.sin(phi[rf_swing_idx])#knee
+
+        #stance
+        self._q_ref[~lf_swing_idx, 0] = self.default_dof_pos[0]#abd
+        self._q_ref[~lf_swing_idx, 1] = self.default_dof_pos[1]#hip
+        self._q_ref[~lf_swing_idx, 2] = self.default_dof_pos[2]#knee
+        self._q_ref[~rf_swing_idx, 3] = self.default_dof_pos[3]#abd
+        self._q_ref[~rf_swing_idx, 4] = self.default_dof_pos[4]#hip
+        self._q_ref[~rf_swing_idx, 5] = self.default_dof_pos[5]#knee
+
+
     def _reset_root_states(self, env_ids):
         """ Resets ROOT states position and velocities of selected environmments
             Sets base position based on the curriculum
@@ -584,7 +689,7 @@ class Pat(LeggedRobot):
         self.gym.set_actor_root_state_tensor_indexed(self.sim,
                                                      gymtorch.unwrap_tensor(self.root_states),
                                                      gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
-    def step(self, actions):
+    def step(self, actions, mode="train"):
         """ Apply actions, simulate, call self.post_physics_step()
 
         Args:
@@ -595,7 +700,8 @@ class Pat(LeggedRobot):
         # step physics and render each frame
         self.render()
         sim_params = self.gym.get_sim_params(self.sim)
-        sim_params.dt = 0.005
+        sim_params.dt = self.cfg.sim.dt
+        # print("Sim dt: ", sim_params.dt)
         self.gym.set_sim_params(self.sim, sim_params)
         #self.gym.set
         for _ in range(self.cfg.control.decimation):
@@ -620,7 +726,7 @@ class Pat(LeggedRobot):
         """
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)
-
+        self.gym.refresh_rigid_body_state_tensor(self.sim)
         self.episode_length_buf += 1
         self.common_step_counter += 1
 
@@ -697,6 +803,16 @@ class Pat(LeggedRobot):
         self.last_last_actions[env_ids] = 0.
         self.last_actions[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
+
+        self._jointPosErrorHist[env_ids] = 0.
+        self._jointVelHist[env_ids] = 0.
+        self._historyTempMem[env_ids] = 0.
+        self._prepreviousAction[env_ids] = 0.
+        self._previousAction[env_ids] = 0.
+        self._foot_pos[env_ids] = 0.
+
+        self._joint_target[env_ids] = 0.
+        self._last_dof_pos[env_ids] = 0.
         self.feet_air_time[env_ids] = 0.
         self.episode_length_buf[env_ids] = 0
         self.reset_buf[env_ids] = 1
@@ -792,6 +908,11 @@ class Pat(LeggedRobot):
         lf_contacts = self._lf_position[:, 2] < 0.02
         rf_contacts = self._rf_position[:, 2] < 0.02
         return torch.sum(lf_contacts*self._lf_vel.norm(dim=1) + rf_contacts*self._rf_vel.norm(dim=1))
+    def _reward_foot_clearance(self):
+        """
+        penalize foot clearance > 0.1
+        """
+        return -1.0*(self.rb_states[self.feet_indices, 2] > 0.1)
     def _reward_foot_height_ref(self):
         # print()
         phi = torch.zeros_like(self._swing_phases)
@@ -828,3 +949,101 @@ class Pat(LeggedRobot):
                torch.square(self._rf_position[:, 2] - pz[:, 1])
         # return 1e5*torch.exp(-((self._lf_position - lf_swing_ref).norm(dim=1) +\
         #        (self._rf_position - rf_swing_ref).norm(dim=1)))
+def swing_ref3d_leg(phase,
+                device,
+                x_default=0.0,
+                y_default=0.0,
+                z_default = -0.35,
+                swing_height=0.05):
+
+    N = phase.shape[0]
+    ref_pos = torch.zeros((N, 3), device=device)
+    t = torch.zeros((N,), device=device)
+
+    up_idx = (phase < math.pi/2.0)
+    down_idx = torch.logical_and(~up_idx, phase < math.pi)
+    t[up_idx] = (2.0/math.pi)*phase[up_idx]
+    t[down_idx] = (2.0/math.pi)*phase[down_idx] - 1.0
+
+    ref_pos[:, 0] = x_default
+    ref_pos[:, 1] = y_default
+    ref_pos[:, 2] = z_default
+    ref_pos[up_idx, 2] += swing_height*(-2*torch.pow(t[up_idx], 3)
+                          + 3*torch.pow(t[up_idx], 2))
+    ref_pos[down_idx, 2] += swing_height*(2*torch.pow(t[down_idx], 3)
+                          - 3*torch.pow(t[down_idx], 2)+1)
+
+    q = ik3d(ref_pos)
+    q[:, 1] = -q[:, 1]
+    return q
+def swing_ref3d(phi,
+                device,
+                x_default=0.0,
+                y_default=0.0,
+                z_default = -0.35,
+                swing_height=0.05):
+    num_envs = phi.shape[0]
+    q_ref = to_torch(np.zeros((num_envs, 6), dtype=np.float32),
+                     device=device)
+
+    q_lf_Ref = swing_ref3d_leg(phi[:, 0],
+                    device,
+                    x_default = x_default,
+                    y_default = y_default,
+                    z_default = z_default,
+                    swing_height = swing_height)
+    q_rf_Ref = swing_ref3d_leg(phi[:, 1],
+                    device,
+                    x_default = x_default,
+                    y_default = -y_default,
+                    z_default = z_default,
+                    swing_height = swing_height)
+    q_ref[:, :3] = q_lf_Ref
+    q_ref[:, 3:] = q_rf_Ref
+    return q_ref
+def ik3d(ref_pos, l2=0.2078, l3=0.205):
+    a = l3 # knee link length
+    b = l2 # hip link length
+    c = ref_pos.norm(dim=1)
+    q = torch.zeros_like(ref_pos)
+    q[:, 0] = torch.atan(ref_pos[:, 1]/(ref_pos[:, 2]+1e-8))
+    q[:, 1] = torch.acos((b**2+ torch.pow(c, 2) - a**2)/(2*b*c))\
+        -torch.atan(ref_pos[:, 0]/ref_pos[:, 1:3].norm(dim=1))
+    q[:, 2] = math.pi - torch.acos((a**2 + b**2 - torch.pow(c, 2))/(2*a*b))
+    return q
+
+def fake_ik(phi, default_dof_pos, device):
+    N, _ = phi.shape
+    q_ref = to_torch(np.zeros((N, 6), dtype=np.float32), device=device)
+    q_ref[:, ] = default_dof_pos
+
+    lf_swing_idx = torch.logical_and(phi>=0.0, phi<= math.pi)[:, 0]
+    rf_swing_idx = torch.logical_and(phi>=0.0, phi<= math.pi)[:, 1]
+    #swing
+    q_ref[lf_swing_idx, 1] = 0.2*torch.sin(phi[lf_swing_idx])#hip
+    q_ref[lf_swing_idx, 2] = 0.2*torch.sin(phi[lf_swing_idx])#knee
+    q_ref[rf_swing_idx, 4] = 0.2*torch.sin(phi[rf_swing_idx])#hip
+    q_ref[rf_swing_idx, 5] = 0.2*torch.sin(phi[rf_swing_idx])#knee
+    return q_ref
+def generate_random_goal_fp(phi, device, r=0.06, h=0.0, max_reach=0.15):
+    N, _ = phi.shape
+    fp = to_torch(np.zeros((N, 6), dtype=np.float32), device=device)
+    lf_goal_idx = torch.logical_and(phi<=0.0)[:, 0]
+    rf_goal_idx = torch.logical_and(phi<=0.0)[:, 1]
+    r = torch.empty(N, 1).uniform_(0, r)
+    theta = torch.empty(N, 1).uniform_(0, 2*math.pi)
+    z = torch.empty(N, 1).uniform_(0, h)
+    x = torch.bmm(r, torch.cos(theta))
+    y = torch.bmm(r, torch.sin(theta))
+    x[x>max_reach] = max_reach
+    x[x<-max_reach] = -max_reach
+    y[y>max_reach] = max_reach
+    y[y<-max_reach] = -max_reach
+
+    fp[lf_goal_idx, 0] = x[lf_goal_idx]
+    fp[lf_goal_idx, 1] = y[lf_goal_idx]
+    fp[lf_goal_idx, 2] = z[lf_goal_idx]
+
+    fp[rf_goal_idx, 0] = x[rf_goal_idx]
+    fp[rf_goal_idx, 1] = y[rf_goal_idx]
+    fp[rf_goal_idx, 2] = z[rf_goal_idx]
